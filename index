@@ -1,0 +1,3069 @@
+<?php
+//defined('BASEPATH') or die('Access restricted!');
+header("Content-Type: text/html; charset=utf-8");
+
+// Timer. Measures time.
+class timer 
+{
+    public $b_time;   // Began time loads of object
+    public $e_time;   // Time of completion of load of object
+
+    /* Fixes initial time
+     * 
+     */
+    function b(){
+       /* $this->b_time=explode(" ",microtime()); // begin time load the page
+          $this->b_time=$this->b_time[1]+$this->b_time[0];*/
+
+       $this->b_time=$this->get_time();
+
+       $this->e();
+       // echo $this->b_time;
+    }
+
+    /* Fixes eventual time
+     * 
+     */
+    function e(){
+    /* $this->e_time=explode(" ",microtime()); // end time load the page
+       $this->e_time=$this->e_time[1]+$this->e_time[0];*/
+
+       $this->e_time=$this->get_time();
+       // echo $this->b_time;
+    }
+
+    /* Counts up resulting time (in seconds). Fractional part is milliseconds
+     * 
+     */
+    function time_rez(){
+      return $this->e_time-$this->b_time;
+    }
+
+    /* Returns current time in seconds (fractional part is milliseconds)
+     * 
+     */
+    function get_time(){
+       $c_time=explode(" ",microtime()); // end time load the page
+       $c_time=$c_time[1]+$c_time[0];
+       return $c_time;
+    }
+
+    /* Counting out of process 
+     * 
+     */
+    function beg_time_proc() {
+       $GLOBALS["time_proc"]=$this->e().$this->time_rez();
+    }
+
+    /* Counting out of internal process 
+     * @param string $name_proc - designation process
+     * @param string $par_procs - process parameters
+     * @return string - default $GLOBALS["time_par_proc"];
+     */
+    function beg_time_par_proc($name_proc='', $par_procs='') {
+      if ($name_proc<>'' and $par_procs=='') {
+          $GLOBALS[$name_proc]=$this->e().$this->time_rez();
+      } else if ($name_proc<>'' and $par_procs<>'') {
+          $GLOBALS[$name_proc][$par_procs]=$this->e().$this->time_rez();
+      } else {
+          $GLOBALS["time_par_proc"]=$this->e().$this->time_rez();
+      }
+    }
+
+    /* Time of process 
+     * 
+     */
+    function get_time_proc() {
+       $beg_time=$GLOBALS["time_proc"];
+       $GLOBALS["time_proc"]=$this->e().$this->time_rez();
+       $time_proc=$GLOBALS["time_proc"]-$beg_time;
+       return $time_proc;
+    }
+
+    /* Time of process of internal process 
+     * 
+     */
+    function get_time_par_proc($name_proc='', $par_procs='') {
+      if ($name_proc<>'' and $par_procs=='') {
+          $beg_time=$GLOBALS[$name_proc];
+          $GLOBALS[$name_proc]=$this->e().$this->time_rez();
+          $time_proc=$GLOBALS[$name_proc]-$beg_time;
+      } else if ($name_proc<>'' and $par_procs<>'') {
+          $beg_time=$GLOBALS[$name_proc][$par_procs];
+          $GLOBALS[$name_proc][$par_procs]=$this->e().$this->time_rez();
+          $time_proc=$GLOBALS[$name_proc][$par_procs]-$beg_time;
+      } else {
+          $beg_time=$GLOBALS["time_par_proc"];
+          $GLOBALS["time_par_proc"]=$this->e().$this->time_rez();
+          $time_proc=$GLOBALS["time_par_proc"]-$beg_time;
+      }
+       return $time_proc;
+    }
+
+}
+/* Parsing of traveling
+ * 
+ */
+class Parser
+{
+    public $is_delmark='All';
+    public $is_main=true;
+    public $is_cal_acc=true;
+    public $is_cal_live_tps=false;
+    public $is_acc_tps=false;
+    public $is_tforward_dps=false;
+    public $is_tforward_dpr=false;
+    public $is_live_acc_tps=false;
+    public $is_live_acc_cdpl=false;
+    public $debug=true;
+    public $url_abbet='';
+    
+    public $time_diff = 0;
+
+    /* Path to abbet */
+    private $url_main='http://prosurf.sbb.ch/pros/inter/'; // Path to root page of traveling
+    private $main_page='prosurfservlet';
+    private $trans_abbet='093';
+    private $trans_station='004';
+    private $trans_train='006';
+    private $file_abbet='frhead_e.html';
+    private $pathtoinfo='/parser/parsinfo.html';
+    private $ar_abbets=array(); 			   // List to abbets
+    private $curr_table;
+    private $curr_db;
+
+    /* Property info of parse*/
+    public $parse_cnt_stations=0;
+    public $parse_cnt_trains=0;
+    public $parse_cnt_records=0;
+    public $parse_datetime;
+    public $cnt_info=5;
+    public $cnt_cicleparse=2000;
+    public $rtime=7; // time difference
+
+    public $templates=''; // templates show
+    public $title='';     // title page
+
+    function __construct(){
+        // Connect to DB Parser
+        if ($this->debug) {
+            //echo "Test";
+            $this->url_abbet=$this->url_main.$this->file_abbet;
+            $this->connect_dbtest_parser();
+        } else {
+            //$this->connect_db_parser();
+        }
+    }
+
+   /* Connect to DB
+    * @param array $config - parameters of the database connection
+    */
+    function connect_db($config) {
+        mysql_connect($config['hostname'],$config['username'],$config['password']) or die(mysql_error());
+        mysql_select_db($config['database']);
+        // Set code in database
+        mysql_query("SET NAMES utf8");
+        mysql_query("set character_set_client='utf8'");
+		mysql_query("set character_set_connection='utf8'");
+		mysql_query("set character_set_results='utf8'");
+		setlocale(LC_ALL, 'ru_RU.utf8');
+    }
+
+    function conf_dbtest_parser() {
+   		$config['hostname'] = "localhost";
+		$config['username'] = "statsswisstrains";
+		$config['password'] = "P-9aj2yH";
+		$config['database'] = "betcom_parser";
+		$config['dbdriver'] = "mysql";
+		$config['dbprefix'] = "";
+		$config['pconnect'] = TRUE;
+		$config['db_debug'] = TRUE;
+		$config['cache_on'] = FALSE;
+		$config['cachedir'] = "";
+		$config['char_set'] = "utf8";
+		$config['dbcollat'] = "utf8_general_ci";
+        return $config;
+    }
+	
+    function conf_db_parser() {
+    }
+
+    /*function connect_db($config='') {
+	     $this->load->database($config);
+    }*/
+
+    function connect_dbtest_parser() {
+        $config=$this->conf_dbtest_parser();
+        $this->curr_db=$config["database"];
+        $this->connect_db($config);
+    }
+
+    function connect_db_parser() {
+        $config=$this->conf_db_parser();
+        $this->curr_db=$config["database"];
+        $this->connect_db($config);
+    }
+    
+    /* Generation of unique ID 
+     * 
+     */
+    function genid() {
+        // better, difficult to guess
+        return  md5(uniqid(rand(), true));
+    }
+    
+    /* Parse of abbets traveling
+     * 
+     */
+    function parse_abbets() {
+		$body = file_get_contents($this->url_abbet);
+		preg_match_all('/javascript\:getEP\(\'([A-Z]+)\'\)/i', $body, $matches, PREG_SET_ORDER);
+    	if (empty($matches))
+	    {
+	    	echo "<div style='font-weight:bold;font-size:13px;color:rad;'>File: ".$this->url_abbet."  to structure of the bad!</div>";
+	    	return array(); 
+	    }else{
+	    	//print_r($matches);
+	    	$cnt=count($matches);
+	    	if ($cnt>0) {
+		    	for ($i = 0; $i < $cnt; $i++)
+		    	{
+		    		$this->ar_abbets[$i]=array('abbet'=>$matches[$i][1],'url_abbet'=>$this->url_main.$this->main_page.'?transaction='.$this->trans_abbet.'&entrypage='.$matches[$i][1]);
+		    		echo "<div style='font-weight:normal;font-size:13px;'>Add abbet: ".$matches[$i][1]."</div>";
+		    	}
+		    	return $this->ar_abbets;
+	    	}
+	    }	    
+	    //ob_flush();
+	    //flush();    	
+    }
+    
+    /* SQL query add of record to table infostations (list of stantion)
+     * @param string $trans   - tran
+     * @param string $lang    - language
+     * @param string $station - stantion
+     * @param string $name_station -  name of the stantion
+     * @param string $urlbox - url 
+     * @param string $cont_arriv - contain    
+     */
+    function sql_ins_infostations($trans='',$lang='e',$station='',$name_station='',$urlbox='',$cont_arriv=''/*,$cont_depart=''*/) {
+    	//$genid=$this->genid();
+    	$sql=" INSERT INTO infostations SET "
+    	     //."id='".$genid."',"
+    	     ."trans='".$trans."',"
+    	     ."lang='".$lang."',"
+    	     ."station='".$station."',"
+    	     ."name_station='".$this->clean_str($name_station)."',"
+    	     ."urlbox='".$urlbox."',"
+    	     ."cont_arriv='".str_replace("'","\'",$cont_arriv)."',"
+    	     //."cont_depart='".str_replace("'","\'",$cont_arriv)."',"
+    	     ."act='Y',"
+    	     ."del='N',"
+    	     ."datecreate=now()";
+    	//echo "<pre>sql=".$sql."</pre>";
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    /* SQL query add of record to table codestations
+     * @param string $station  - code station
+     * @param string $lang     - language
+     * @param string $name_station - stantion
+     * @param string $abb - abb stantion
+     */
+    function sql_ins_codestation($station='',$lang='e',$name_station='',$abb='') {
+    	//$genid=$this->genid();
+    	$sql=" INSERT INTO codestations SET "
+    	     //."id='".$genid."',"
+    	     ."station='".$station."',"
+       	     ."name_station='".$this->clean_str($name_station)."',"
+    	     ."lang='".$lang."',"
+    	     ."abb='".$abb."';";
+    	//echo "<pre>sql=".$sql."</pre>";
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+
+    /* SQL query update of record to table codestations
+     * @param string $station  - code station
+     * @param string $lang     - language
+     * @param string $name_station - stantion
+     * @param string $abb - abb stantion
+     */
+    function sql_update_codestation($station='',$lang='e',$name_station='',$abb='') {
+    	//$genid=$this->genid();
+    	$sql=" UPDATE codestations SET "
+    	     //."id='".$genid."',"
+    	     ."station='".$station."',"
+       	     ."name_station='".$this->clean_str($name_station)."',"
+    	     ."lang='".$lang."',"
+    	     ."abb='".$abb."';";
+    	//echo "<pre>sql=".$sql."</pre>";
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    /* SQL query select of records to table codestation
+     * @param string $station  - code station
+     * @param string $lang     - language
+     * @param string $name_station - stantion
+     * @param string $abb - abb stantion
+     */
+    function update_codestation($station='',$lang='e',$name_station='',$abb='') {
+         $sql="SELECT * FROM codestations
+               WHERE station='".trim($station)."' and lang='".trim($lang)."'";
+         $res=mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+         if (mysql_num_rows($res)<>0){
+            $row=mysql_fetch_array($res, MYSQL_ASSOC);
+            if (!($row["name_station"]==$this->clean_str(trim($name_station)))||!($row["abb"]==trim($abb))) {
+                $this->sql_update_codestation($station,$lang,$name_station,$abb);
+            }
+         }else{
+            $this->sql_ins_codestation($station,$lang,$name_station,$abb);
+         }
+    }
+
+    /* Get name stantion 
+     * @param string $code - code stantion
+     * @param string $lang - languages
+     * return string 
+     */
+    function get_name_station($code='',$lang='e') {
+        $sql="SELECT name_station FROM codestations
+              WHERE station='".trim($code)."' and lang='".trim($lang)."'";
+        $res=mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+        if (mysql_num_rows($res)<>0){
+           $row=mysql_fetch_array($res, MYSQL_ASSOC);
+           return trim($row["name_station"]);
+        }else{
+           return 'station with <b style="color:red;">'.trim($code).'</b> not found' ;
+        }
+    }
+    
+    /* N0 USE! - SQL query add of record to table infotrains (list of trains)
+     * @param string $trans       - tran
+     * @param string $lang        - language
+     * @param string $direct      - stantion
+     * @param string $name_direct - name stantion
+     * @param string $ntrain      - number train
+     * @param string $urlbox      - url box
+     * @param string $cont        - dop params
+     */
+    function sql_ins_infotrains($trans='',$lang='e',$abb='', $station='', $name_station, $ntrain='',$urlbox='',$cont='') {
+    	$genid=$this->genid();
+    	$sql=" INSERT INTO infotrains SET "
+    	     ."id='".$genid."',"
+    	     ."trans='".$trans."',"
+    	     ."lang='".$lang."',"
+    	     ."abb='".$abb."',"
+    	     ."station='".$station."',"
+    	     ."name_station='".$this->clean_str($name_station)."',"
+    	     ."ntrain='".$ntrain."',"
+    	     ."urlbox='".$urlbox."',"
+    	     ."cont='".str_replace("'","\'",$cont)."',"
+    	     ."act='Y',"
+    	     ."del='N',"
+    	     ."datecreate=now()";
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+    
+    /* SQL of drop table
+     * @param string $name_table - name the table
+     */
+    function sql_drop_table($name_table) {
+    	$sql="DROP TABLE ".$name_table.";";
+    	$res=mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    /* SQL of create table 'codestations'
+     * @param boolen $is_drop - Drop table before create
+     */
+    function sql_clear_codestations($is_drop=true) {
+      if ($is_drop) {
+        $this->sql_drop_table('codestations');
+      }
+      $sql="CREATE TABLE `codestations` (
+            `id` int(11) NOT NULL auto_increment,
+            `station` char(7) collate utf8_unicode_ci NOT NULL,
+            `name_station` varchar(75) collate utf8_unicode_ci default NULL,
+            `comment` int(11) default NULL,
+            `lang` char(2) collate utf8_unicode_ci default NULL,
+            `abb` char(2) collate utf8_unicode_ci default NULL,
+            PRIMARY KEY  (`id`),
+            UNIQUE KEY `code` (`station`),
+            UNIQUE KEY `id` (`id`),
+            UNIQUE KEY `station` (`station`)
+          ) ENGINE=MyISAM AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;";
+      mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    
+    /* SQL of create table 'infostation'
+     * @param boolen $is_drop - Drop table before create
+     */
+    function sql_clear_infostations($is_drop=true) {
+      if ($is_drop) {
+    	$this->sql_drop_table('infostations');
+      }
+    	/*$sql=" CREATE TABLE IF NOT EXISTS `infostations` (
+			  `id` int(11) NOT NULL,
+			  `trans` char(5) NOT NULL,
+              `lang` varchar(75) NOT NULL,
+              `station` varchar(75) NOT NULL,
+			  `name_station` varchar(75) NOT NULL,
+			  `urlbox` varchar(254) NOT NULL,
+			  `cont_arriv` text NOT NULL,
+			  `cont_depart` text NOT NULL,
+			  `act` char(1) NOT NULL,
+			  `del` char(1) NOT NULL,
+			  `datecreate` datetime NOT NULL,
+			  `dateupdate` datetime NOT NULL,
+			  UNIQUE KEY `id` (`id`),
+			  KEY `lang` (`lang`),
+			  KEY `act` (`act`,`del`,`datecreate`,`dateupdate`),
+			  KEY `station` (`station`),
+			  KEY `name_station` (`name_station`),
+			  KEY `trans` (`trans`)
+			) ENGINE=MyISAM CHARACTER SET utf8;";*/
+       $sql="CREATE TABLE IF NOT EXISTS `infostations` (
+             `id` int(11) NOT NULL auto_increment,
+             `trans` char(5) NOT NULL,
+             `lang` char(2) NOT NULL,
+             `station` varchar(10) NOT NULL,
+             `name_station` varchar(75) NOT NULL,
+             `urlbox` varchar(254) NOT NULL,
+             `cont_arriv` text NOT NULL,
+             `act` char(1) NOT NULL,
+             `del` char(1) NOT NULL,
+             `datecreate` datetime NOT NULL,
+             `dateupdate` datetime NOT NULL,
+              PRIMARY KEY  (`id`),
+              KEY `lang` (`lang`),
+              KEY `act` (`act`,`del`,`datecreate`,`dateupdate`),
+              KEY `station` (`station`),
+              KEY `name_station` (`name_station`),
+              KEY `trans` (`trans`)
+             ) ENGINE=MyISAM DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;";
+
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    /*NO USE! SQL of create table 'infotrains'
+     * @param boolen $is_drop - Drop table before create
+     */
+    function sql_clear_infotrains($is_drop=true) {
+      if ($is_drop) {
+    	$this->sql_drop_table('infotrains');
+      }
+    	$sql="CREATE TABLE IF NOT EXISTS `infotrains` (
+			  `id` varchar(75) NOT NULL,
+			  `trans` varchar(75) NOT NULL,
+			  `lang` varchar(75) NOT NULL,
+			  `abb` varchar(254) NOT NULL,
+			  `station` varchar(75) NOT NULL,
+			  `name_station` varchar(75) NOT NULL,
+			  `ntrain` int(11) NOT NULL,
+			  `urlbox` varchar(254) NOT NULL,
+			  `cont` text NOT NULL,
+			  `act` char(1) NOT NULL,
+			  `del` char(1) NOT NULL,
+			  `datecreate` datetime NOT NULL,
+			  `dateupdate` datetime NOT NULL,
+			  UNIQUE KEY `id` (`id`),
+			  KEY `lang` (`lang`),
+			  KEY `act` (`act`,`del`,`datecreate`,`dateupdate`),
+			  KEY `station` (`station`),
+			  KEY `name_station` (`name_station`),
+			  KEY `ntrain` (`ntrain`),
+			  KEY `trans` (`trans`)
+			) ENGINE=MyISAM CHARACTER SET utf8;";
+
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    /* SQL of create table 'station'
+     * @param boolen $is_drop - Drop table before create
+     */
+    function sql_clear_stations($is_drop=true) {
+       if ($is_drop) {
+    	$this->sql_drop_table('stations');
+       }
+    	/*$sql="CREATE TABLE IF NOT EXISTS `stations` (
+			  `id` varchar(75) NOT NULL,
+			  `direct` time NOT NULL,
+			  `train` int(11) NOT NULL,
+			  `abb` varchar(254) NOT NULL,
+			  `beg_station` varchar(75) NOT NULL,
+			  `name_beg_station` varchar(75) NOT NULL,
+			  `name_end_station` varchar(75) NOT NULL,
+			  `uid` varchar(75) NOT NULL,
+			  `expect` time NOT NULL,
+			  `current` varchar(254) NOT NULL,
+			  `datestatus` datetime NOT NULL,
+			  `type` int(11) NOT NULL,
+			  `del` char(1) NOT NULL default 'N',
+			  `act` char(1) NOT NULL default '',
+			  `datecreate` datetime NOT NULL,
+			  `dateupdate` datetime NOT NULL,
+			  UNIQUE KEY `id` (`id`),
+			  KEY `direct` (`direct`),
+			  KEY `train` (`train`),
+			  KEY `uid` (`uid`),
+			  KEY `expect` (`expect`),
+			  KEY `type` (`type`),
+			  KEY `del` (`del`),
+			  KEY `act` (`act`),
+			  KEY `datecreate` (`datecreate`),
+			  KEY `dateupdate` (`dateupdate`),
+			  KEY `beg_station` (`beg_station`),
+			  KEY `datestatus` (`datestatus`)
+			) ENGINE=MyISAM CHARACTER SET utf8;";*/
+        $sql="CREATE TABLE IF NOT EXISTS `stations` (
+              `id` int(11) NOT NULL auto_increment,
+              `direct` time NOT NULL,
+              `train` int(11) NOT NULL,
+              `beg_station` varchar(10) NOT NULL,
+              `name_beg_station` varchar(75) NOT NULL,
+              `name_end_station` varchar(75) NOT NULL,
+              `uid` int(11) NOT NULL,
+              `expect` time NOT NULL,
+              `datestatus` datetime NOT NULL,
+   			  `type` int(1) NOT NULL,
+              `del` char(1) NOT NULL default 'N',
+              `act` char(1) NOT NULL default '',
+              `datecreate` datetime NOT NULL,
+              UNIQUE KEY `id` (`id`),
+              KEY `type` (`type`),
+              KEY `direct` (`direct`),
+              KEY `train` (`train`),
+              KEY `uid` (`uid`),
+              KEY `expect` (`expect`),
+              KEY `del` (`del`),
+              KEY `act` (`act`),
+              KEY `datecreate` (`datecreate`),
+              KEY `beg_station` (`beg_station`),
+              KEY `datestatus` (`datestatus`)
+              ) ENGINE=MyISAM DEFAULT CHARSET=utf8 AUTO_INCREMENT=1 ;";
+
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    /*NO USE! SQL of create table 'trains'
+     * @param boolen $is_drop - Drop table before create
+     */
+    function sql_clear_trains($is_drop=true) {
+      if ($is_drop) {
+       	$this->sql_drop_table('trains');
+      }
+    	$sql="CREATE TABLE IF NOT EXISTS `trains` (
+			  `id` varchar(75) NOT NULL,
+			  `station` varchar(75) NOT NULL,
+			  `name_station` varchar(254) NOT NULL,
+			  `direct` int(11) NOT NULL,
+			  `train` int(11) NOT NULL,
+			  `uid` varchar(75) NOT NULL,
+			  `arriv` time NOT NULL COMMENT 'Arrival Timetable',
+			  `depart` time NOT NULL COMMENT 'Departure Timetable',
+			  `arriv_exp` time NOT NULL COMMENT 'Expected arrival',
+			  `depart_exp` time NOT NULL COMMENT 'Expected deaprted',
+			  `current` varchar(254) NOT NULL,
+			  `datestatus` datetime NOT NULL,
+			  `del` char(1) NOT NULL,
+			  `act` char(1) NOT NULL,
+			  `datecreate` datetime NOT NULL,
+			  `dateupdate` datetime NOT NULL,
+			  UNIQUE KEY `id` (`id`,`uid`),
+			  KEY `arriv` (`arriv`,`depart`),
+			  KEY `uid` (`uid`),
+			  KEY `depart` (`depart`),
+			  KEY `arriv_exp` (`arriv_exp`),
+			  KEY `depart_exp` (`depart_exp`),
+			  KEY `del` (`del`),
+			  KEY `act` (`act`,`datecreate`,`dateupdate`),
+			  KEY `datecreate` (`datecreate`),
+			  KEY `dateupdate` (`dateupdate`),
+			  KEY `direct` (`direct`),
+			  KEY `train` (`train`),
+			  KEY `station` (`station`),
+			  KEY `datestatus` (`datestatus`)
+			) ENGINE=MyISAM CHARACTER SET utf8;";
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    /* NO USE! SQL of create table 'trains'
+     * @param boolen $is_drop - Drop table before create
+     */
+    function sql_clear_infoparse($is_drop=true) {
+        if ($is_drop) {
+        	$this->sql_drop_table('infoparse');
+        }
+    	$sql="CREATE TABLE IF NOT EXISTS `infoparse` (
+				  `id` varchar(75) NOT NULL,
+				  `cnt_stations` int(11) NOT NULL,
+				  `cnt_trains` int(11) NOT NULL,
+				  `cnt_records` int(11) NOT NULL,
+				  `datetime` datetime NOT NULL,
+				  KEY `id` (`id`,`datetime`)
+			) ENGINE=MyISAM CHARACTER SET utf8;";
+    	mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+    
+    // РџСЂРѕСЃС‚РѕРµ РґРµРєРѕРґРёСЂРѕРІР°РЅРёРµ РёР· utf-8 РІ С‚РµРєСѓС‰СѓСЋ РєРѕРґРёСЂРѕРІРєСѓ, Р±РµР· РІС‹РїРѕР»РЅРµРЅРёСЏ РґСЂСѓРіРёС… РѕРїРµСЂР°С†РёР№
+    // $textinp - РґРµРєРѕРґРёСЂСѓРµРјС‹Р№ С‚РµРєСЃС‚
+    // Рў.Рє. РІ sql Р±С‹Р»Р° РїСЂРѕР±Р»РµРјР° СЃ РєР°РІС‹С‡РєРѕР№, С‚Рѕ РґРµР»Р°РµРј Р·Р°РјРµРЅСѓ РѕРґРёРЅР°СЂРЅРѕР№ РєР°РІС‹С‡РєРё РЅР° РґРІРѕР№РЅСѓСЋ
+    function dc_simple($textinp){
+       return iconv('utf-8', 'cp1251', $textinp);
+    }
+
+
+    /* Recoding text
+     * @param string $textinp - text
+     * return string
+     */
+    function ec_simple($textinp){
+       return iconv('cp1251', 'utf-8', $textinp);
+    }
+
+    /* Clear table
+     * @param boolen $is_drop - Drop table before create
+     */
+    function clear_table($is_drop=true) {
+    	$this->sql_clear_infostations($is_drop);
+    	$this->sql_clear_infotrains($is_drop);
+    	$this->sql_clear_stations($is_drop);
+    	$this->sql_clear_trains($is_drop);
+    	$this->sql_clear_infoparse($is_drop);
+    }
+    
+    /* Parse of tran 
+     * 
+     */
+    function parse_pbps() {
+    	$this->parse_abbets();
+    	//print_r($this->ar_abbets);
+    	$cnt=count($this->ar_abbets);
+    	$ctx = stream_context_create(array('http' => array('timeout' => 60)));
+    	for ($i = 0; $i < $cnt; $i++)
+	    { try {
+	      	$body=file_get_contents($this->ar_abbets[$i]['url_abbet'],false,$ctx);
+ 			if (!$body ) throw new Exception("open");  
+		      	preg_match_all('/\<a[\s]*href\=\"javascript\:getPBP\(\'([A-Z]+)\'\)\" target\=\"_top\"\>([^<]+)\<\/a\>/i', $body, $matches, PREG_SET_ORDER);
+		    } catch (Exception $e) {
+		    	echo "<div style='font-weight:bold;font-size:13px;color:rad;'>File: ".$this->ar_abbets[$i]['url_abbet']."  don't access for writing!</div>";
+  				continue;
+			}
+		    if (empty($matches))
+			{ 
+				echo "<div style='font-weight:bold;font-size:13px;color:rad;'>File: ".$this->ar_abbets[$i]['url_abbet']."  don't have the data!</div>";
+				continue;
+			}else{
+			    //print_r($this->ar_abbets);
+			    $snt=count($matches);
+			    //print_r($matches);
+			    if ($snt>0) {
+				   	for ($s = 0; $s < $snt; $s++)
+				   	{
+ 	                    $this->update_codestation($matches[$s][1],'e',$matches[$s][2],$this->ar_abbets[$i]['abbet']);
+				   		$content_arriv=file_get_contents($this->url_main.$this->main_page.'?transaction='.$this->trans_station.'&language=e&pbp='.$matches[$s][1].'&direction=1',false,$ctx);
+				   		//$content_depart=file_get_contents($this->url_main.$this->main_page.'?transaction='.$this->trans_station.'&language=e&pbp='.$matches[$s][1].'&direction=2',false,$ctx);
+				   		//$this->sql_ins_infostations($this->trans_station,'e',$matches[$s][1],$matches[$s][2],$this->url_main.$this->main_page.'?transaction='.$this->trans_station.'&language=e&pbp='.$matches[$s][1],$content_arriv,$content_depart);
+                        $this->sql_ins_infostations($this->trans_station,'e',$matches[$s][1],$matches[$s][2],$this->url_main.$this->main_page.'?transaction='.$this->trans_station.'&language=e&pbp='.$matches[$s][1],$content_arriv);
+				   		echo "<div style='font-weight:normal;font-size:13px;'>Add direction: ".$matches[$s][1]."&nbsp;->&nbsp;".$matches[$s][2]."</div>";
+				   	}
+			    }
+			 }          		
+	    }
+    } 
+    
+    /* Clear old url parsing
+     * @param string $period='quarter' - period clearing of records
+     * @param boolen $not_exp=true     - flag of including of condition  
+     */
+    function clear_oldurl($table='infostations', $period='quarter',$not_exp=true) {
+    	$sql="SELECT max(datecreate) as maxdatetime FROM ".$table." ;";
+    	$res=mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    	$row=mysql_fetch_array($res, MYSQL_ASSOC);
+    	$maxdatetime=$row["maxdatetime"];
+    	//echo $maxdatetime;
+  		if (trim($maxdatetime)) {
+			$str_where=$this->strsql_where_per_dt('datecreate', $period,$maxdatetime,$not_exp);
+			
+			$sql="DELETE FROM ".$table." WHERE ".$str_where.";";
+			//echo 'sql_del_urlbox =>'.$sql;
+			$res=mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+  		}
+    }
+    
+    /* Get SQL string to convert unix date in datetime
+     * @param int $unix_date - Date of format UNIX 
+     * return string
+     */  
+    function strsql_unixtodate($unix_date) {
+    	return 'FROM_UNIXTIME('.$unix_date.')';    
+    }
+    
+    /* Get string to convert string datetime to string date
+     * @param string $datetime - string of format datetime 
+     * @param string $format - format string date 
+     * return string
+     */
+	function str_datetimetodate($datetime='',$format='Y-m-d') {
+    	return date($format, strtotime($datetime));    
+    }
+    
+    /* Get string to convert string date time to string date unix
+     * @param string $datetime - string of format datetime  
+     * return int
+     */
+	function str_datetime_todateunix($datetime='') {
+    	return strtotime($datetime);    
+    }
+    
+    /* Destroys the proformatted number on a screen
+     * A number is formatted to the 2th sign of posel comma
+     * The delimiter of thousands is done
+     * A delimiter of shot is a comma
+     * @param int $dec_inp - number of characters
+     * @param int $dec_kol - it is an amount of digits after a comma
+     * return string 
+     */
+    function my_decimal($dec_inp,$dec_kol=2){
+        $dec_inp=$this->set_decimal($dec_inp);
+        return number_format( /*$dec_inp*/$dec_inp, $dec_kol, ',', ' ');
+    }
+
+    /*  Forms a number even there is a value it is set, as 10 000,00
+     *  @param int $dec_inp - number of characters
+     */
+    function set_decimal($dec_inp){
+
+         $dec_inp=str_replace(' ','',$dec_inp);
+         $dec_inp=str_replace(',','.',$dec_inp);
+
+         $dec_inp=floatval($dec_inp);
+
+         return $dec_inp;
+
+    }
+        
+    /* Get string where period for SQL
+     * @param string  $str_fields - fields if's
+     * @param string  $period - period choice 
+     * @param string  $curr_date - current to date
+     * @param boolean $not - NOT in WHERE
+     * @param string  $value_period 
+     *                   $period:'SECOND' => value_period: '20' SECONDS;
+     *                   $period:'MINUTE' => value_period: '20' MINUTES;
+     *                   $period:'HOUR'   => value_period: '20' HOURS;
+     *                   $period:'DAY' 	  => value_period: '20' DAYS;
+     *                   $period:'MONTH'  => value_period: '12'	MONTHS;
+     *                   $period:'YEAR '  => value_period: '4'	YEARS;
+     *                   $period:'MINUTE_SECOND' => value_period: '20:40' "MINUTES:SECONDS";
+     *                   $period:'HOUR_MINUTE'	 => value_period: '20:35' "HOURS:MINUTES";
+     *                   $period:'DAY_HOUR' => value_period: '20 10' "DAYS HOURS";
+     *                   $period:'YEAR_MONTH' => value_period: '20-4' "YEARS-MONTHS";
+     *                   $period:'HOUR_SECOND' => value_period: '20:4:60' "HOURS:MINUTES:SECONDS";
+     *                   $period:'DAY_MINUTE' => value_period: '20 4:36' "DAYS HOURS:MINUTES";
+     *                   $period:'DAY_SECOND' => value_period: '16 4:20:40'	"DAYS HOURS:MINUTES:SECONDS";
+     * return string 
+     */
+    function strsql_where_per_dt($str_fields='', $period='quarter',$curr_datetime="", $not=true, $value_period='') {
+    	
+       $str_not=($not ? ' NOT ' : '');
+       $interval=(trim($value_period)<>'' ? $value_period : 1);
+       if ($curr_datetime<>"") {
+       	   $curren_datetime="DATE_ADD(DATE_FORMAT('".$curr_datetime."','%Y-%m-%d %H:%i:%s'), INTERVAL ".$this->rtime." HOUR)";
+       }else{
+       	   $curren_datetime="DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL ".$this->rtime." HOUR)";
+       }	
+       
+       switch ($period) {
+       		       
+       	case 'minute_second':
+
+       		 if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' MINUTE_SECOND) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' MINUTE_SECOND) ) ";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' MINUTE_SECOND) AND ".$curren_datetime." )";
+       		  	}else{
+       		  	    $str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' MINUTE_SECOND) )";
+       		  	}
+       		 }
+       		 break;
+       		
+       	case 'hour_minute':
+
+       		if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' HOUR_MINUTE) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' HOUR_MINUTE)  )";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' HOUR_MINUTE) AND ".$curren_datetime." )";
+       		  	}else{
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' HOUR_MINUTE) )";
+       		  	}
+       		 }
+       		 break;
+       		
+       	case 'day_hour':
+       		
+       		if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_HOUR) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_HOUR) )";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_HOUR) AND ".$curren_datetime." )";
+       		  	}else{
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_HOUR) )";
+       		  	}
+       		 }
+       		 break;
+       		
+       	case 'year_month':
+       		
+       		if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' YEAR_MONTH) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' YEAR_MONTH) )";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' YEAR_MONTH) AND ".$curren_datetime." )";
+       		  	}else{
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' YEAR_MONTH) )";
+       		  	}
+       		 }
+       		 break;
+       		 
+       	case 'hour_second':
+       		
+       		if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' HOUR_SECOND) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' HOUR_SECOND) )";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' HOUR_SECOND) AND ".$curren_datetime." )";
+       		  	}else{
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' HOUR_SECOND) ) ";
+       		  	}
+       		 }
+       		 break;
+       		
+       	case 'day_minute':
+       		
+       		if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_MINUTE) AND FROM_UNIXTIME(".$null_time.") ) ";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_MINUTE) )";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	$str_sql=$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_MINUTE) AND ".$curren_datetime." ";
+       		 }
+       		 break;
+       		
+       	case 'day_second';
+
+       		if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_SECOND) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_SECOND) )";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_SECOND) AND ".$curren_datetime." )";
+       		  	}else{
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL '".$interval."' DAY_SECOND) )";
+       		  	}
+       		 }
+       		 break;
+       	
+       	case 'second':
+       		
+       		 if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." SECOND) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." SECOND) )";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." SECOND) AND ".$curren_datetime." )";
+       		  	}else{
+					$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." SECOND) )";       		  	
+       		  	}
+       		 }
+       		 break;
+       		
+       	case 'minute':
+       		 if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." MINUTE) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." MINUTE) )";
+  			    }
+       		 }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." MINUTE) AND ".$curren_datetime." )";
+       		  	}else{
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." MINUTE) )";
+       		  	}
+       		 }
+       		 break;
+       		
+       	case 'hour':
+       		
+       		  if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." HOUR) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." HOUR) )";
+  			    }
+       		  }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime($now_time["hours"]+$this->rtime,$now_time["minutes"],$now_time["seconds"],$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." HOUR) AND ".$curren_datetime." )";
+       		  	}else{
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." HOUR) )";
+       		  	}
+       		  }
+       		  break;
+       		
+       	case 'day':
+       		 if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime(0,0,0,$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    if ($interval>=0) {
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." DAY) AND FROM_UNIXTIME(".$null_time.") )";
+  			    }else{
+  			    	$str_sql="(".$str_fields.$str_not." BETWEEN FROM_UNIXTIME(".$null_time.") AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." DAY) )";
+  			    }
+       		  }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime(0,0,0,$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	if ($interval>=0) {
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." DAY) AND ".$curren_datetime." )";
+       		  	}else{
+       		  		$str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL ".$interval." DAY) )";
+       		  	}
+       		  }
+       		  break;
+
+        case 'week': 	
+       		  $str_sql=$str_fields.$str_not." BETWEEN DATE_SUB(".$curren_datetime.", INTERVAL 7 DAY) AND ".$curren_datetime." ";
+       		  break;
+        case 'lastweek':
+        	  if ($interval>=0) {        	
+       		  	  $str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(".$curren_datetime.", INTERVAL ".(7)*$value_period." DAY) AND ".$curren_datetime." )";
+        	  }else{
+        	  	  $str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(".$curren_datetime.", INTERVAL ".(7)*$value_period." DAY) )";
+        	  }
+       		  break;
+        case 'month': 
+       		  $str_sql=$str_fields.$str_not." BETWEEN DATE_SUB(".$curren_datetime.", INTERVAL 1 MONTH) AND ".$curren_datetime." ";
+       		  break;
+        case 'lastmonth':
+        	  if ($interval>=0) {
+       		  	  $str_sql="(".$str_fields.$str_not." BETWEEN DATE_SUB(".$curren_datetime.", INTERVAL ".(1)*$value_period." MONTH) AND ".$curren_datetime." )";
+        	  }else{
+        	  	  $str_sql="(".$str_fields.$str_not." BETWEEN ".$curren_datetime." AND DATE_SUB(".$curren_datetime.", INTERVAL ".(1)*$value_period." MONTH) )";
+        	  }
+       		  break;
+        case 'quarter': 
+       		  $str_sql=$str_fields.$str_not." BETWEEN DATE_SUB(".$curren_datetime.", INTERVAL 3 MONTH) AND ".$curren_datetime." ";
+       		  break;
+       	case 'year': 
+       		  $str_sql=$str_fields.$str_not." BETWEEN DATE_SUB(".$curren_datetime.", INTERVAL 1 YEAR) AND ".$curren_datetime." ";
+       		  break;
+        default: 
+        	  if (trim($curr_datetime)==="") {
+       		  	$now_time = getdate(time() + $this->time_diff);
+       		    //Data the begin day
+  			    $null_time = mktime(0,0,0,$now_time['mon'],$now_time['mday'],$now_time['year']);
+  			    $str_sql=$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL 2 DAY) AND FROM_UNIXTIME(".$null_time.") ";
+       		  }else{
+       		  	$now_time = getdate(strtotime($curr_datetime));
+       		  	$null_time = mktime(0,0,0,$now_time['mon'],$now_time['mday'],$now_time['year']);
+       		  	$str_sql=$str_fields.$str_not." BETWEEN DATE_SUB(FROM_UNIXTIME(".$null_time."), INTERVAL 2 DAY) AND ".$curren_datetime." ";
+       		  }
+       		  break;
+       }  
+       return $str_sql;
+    }
+    
+    
+    /* Save log
+     * @param string $str_info - string info
+     * @param boolean $is_append - is append string
+     */
+    function save_log($str_info='', $is_append=false) {
+        if ($is_append) {
+            file_put_contents($_SERVER["DOCUMENT_ROOT"].'/'.$this->pathtoinfo,$str_info,FILE_APPEND);
+        } else {
+            file_put_contents($_SERVER["DOCUMENT_ROOT"].'/'.$this->pathtoinfo,$str_info);
+        }
+    }
+
+    
+    /* No use! Save direction
+     * 
+     */
+    function save_info() {
+       $timer=new timer();
+       $timer->b();	
+	   $sql="SELECT * FROM infostations WHERE act='Y' AND del='N' LIMIT ".$this->cnt_cicleparse." OFFSET 0;";
+	   $res=mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+	   while ($row=mysql_fetch_array($res)){
+	   	   // Parse arrived
+	   	   $this->parse_station($row["cont_arriv"],1,$row["id"],$row["station"],$row["name_station"]);
+	   	   // Parse departed
+	   	   //$this->parse_station($row["cont_depart"],2,$row["id"],$row["station"],$row["name_station"]);
+	   	   // Mark about treatment
+	   	   $this->mark_treatrec($row["id"]);
+	   	   //echo $cnt++;
+	   }
+	   
+	   $this->parse_cnt_stations=$this->sql_cnt_stations();
+	   $this->parse_cnt_trains=$this->sql_cnt_trains();
+	   $this->parse_cnt_records=$this->sql_cnt_records();
+	   $this->sql_act_trains();
+	   $this->parse_datetime=date('Y-m-d H:i:s');
+	   $str_info=$this->create_infohtml();
+	   $this->sql_save_parseinfo();
+	   //echo $str_info;
+	   $timer->e();
+	   $str_info.='<div align="center"><center>Parsing time, sec: '.$timer->time_rez().'</center></div>';
+	   $this->save_log($str_info);
+    }
+
+    /* SQL save parse info
+     * 
+     */
+    function sql_save_parseinfo() {
+    	$sql="SELECT count(*) as cnt, min(datetime) as mindatetime FROM infoparse;";
+    	$res=mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    	$row=mysql_fetch_array($res);
+    	if ($row["cnt"]==$this->cnt_info) {
+    		$sql="DELETE FROM infoparse WHERE datetime=DATE_FORMAT('".$row["mindatetime"]."','%Y-%m-%d %H:%i:%s');";
+    		mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    	}
+    	
+       	$id=$this->genid();
+    	//echo $ar_station["datestatus"];
+    	$sql="INSERT INTO infoparse SET ".
+    		 	"id='".$id."',".
+    	        "cnt_stations='".$this->parse_cnt_stations."',".
+    			"cnt_trains='".$this->parse_cnt_trains."',".
+    			"cnt_records='".$this->parse_cnt_records."',".
+    	        "datetime=DATE_FORMAT('".$this->parse_datetime."','%Y-%m-%d %H:%i:%s');";
+         mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>'); 
+    } 
+    
+    /* Create body information of parse
+     * 
+     */
+    function create_infohtml() {
+	   		$info='<div style="padding:15px;color:green" align="center"> Information of the parsing process</div>';
+	   		$info.='<div align="center">';
+	   		$info.='	<table border="1" bordercolor="#c0c0c0" cellpadding="1" cellspacing="0">'.chr(13);
+	   		$info.='		<tbody>
+	   							<th>Amount&nbsp;of&nbsp;stations&nbsp;added</th>
+        						<th>Amount&nbsp;of&nbsp;trains&nbsp;added</th>
+        						<th>Amount&nbsp;of&nbsp;table&nbsp;records</th>
+        						<th>Latest&nbsp;update&nbsp;time</th>
+        					</tbody>';
+	   		$sql="SELECT * FROM infoparse ORDER BY datetime DESC;";
+    		$res=mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    		while ($row=mysql_fetch_array($res)) {
+    			
+		   		$info.='		<tr>';
+		   		$info.='<td align="center">'.$row["cnt_stations"].'</td>';
+		   		$info.='<td align="center">'.$row["cnt_trains"].'</td>';
+		   		$info.='<td align="center">'.$row["cnt_records"].'</th>';
+		   		$info.='<td align="center">'.$row["datetime"].'</td>';
+		   		$info.='		</tr>';
+		   		 
+    		}
+       		$info.=' </table>';
+       		$info.='</div>';
+       		return $info;
+	}
+    
+
+	
+    /* Parse rows info of station in table the station 
+     * 
+     */
+    function parse_rows_station($cont_exp) {
+    	/*$cont_exp='<td align="center">07:09</td><td align="center"><img src="images/e/61_an.gif" height="18" width="60"></td><td align="right"><a href="javascript:getZugLauf('19219')">19219</a>&nbsp;</td><td align="left">&nbsp;Brugg AG</td><td align="center">07:09</td><td align="center">&nbsp;</td>';*/
+    	preg_match_all('/\<td[^>]*\>([\:0-9]+)\<\/td\>\<td[^>]*\>\<img[\s]+src\=\"([\s]*[^"]*)\"[^>]*\>\<\/td\>\<td[^>]*\>\<a href\=\"([^"]*)\"\>([0-9]+)\<\/a\>[^<]+\<\/td\>\<td align\=\"left\"\>([^<]+)\<\/td\>\<td[^>]+\>([\:0-9]+)\<\/td\>\<td[^>]+>([^<]+)\<\/td\>/i', $cont_exp, $matches, PREG_SET_ORDER);	
+        //echo "<pre>";print_r($matches);echo "</pre>";
+        return $matches;
+    }
+    
+    /* Parse string datetime of station in table the station 
+     * 
+     */
+    function parse_datetime_station($cont_exp) {
+    	/*$cont_exp='<td align="center"><a href="mainsite_e.html" target="_top">Train Station Information</a></td><td align="center"><a href="help/help_e.html#Zuglauf" target="_blank">Help</a></td><td align="center"><a href="index_e.html">Home</a></td><td align="center">
+        Status: 08.09.2010 / 07:39</td>';*/
+    	preg_match('/\<td[^>]*\>\<a[^>]*\>[^<]*\<\/a\>\<\/td\>\<td[^>]*\>\<a[^>]*\>[^<]*\<\/a\>\<\/td\>\<td[^>]*\>\<a[^>]*\>[^<]*\<\/a\>\<\/td\>\<td[^>]*\>[\s\n]*[a-zA-Z\:\s]+[\s]*([0-9\.]+)[\s\/]*([\:0-9]+)\<\/td\>/i', $cont_exp, $matches);
+        //echo "<pre>";print_r($matches);echo "</pre>";
+        return $matches;
+    }
+    
+    /* Parse arrived or departed
+     * @param string $cont_exp - body direction
+     * @param int    $type=1   - 1=>arrived; 2=>departed
+     * @param string $urlid    - ID - record urlbox
+     * @param int $beg_stat      - number begin station
+     * @param string $name_beg_stat - name begin station
+     */
+    function parse_station( $cont_exp, $type, $urlid, $beg_stat, $name_beg_stat) {
+		$arr_parse_train=$this->parse_rows_station($cont_exp);
+		$arr_parse_datetime=$this->parse_datetime_station($cont_exp);
+		//echo '<pre>'.$arr_parse_datetime[1].' '.$arr_parse_datetime[2].':00'.'</pre>';
+		//echo '<pre>'.date('Y-m-d H:i:s',strtotime($arr_parse_datetime[1].' '.$arr_parse_datetime[2].':00')).'</pre>';
+		$ctx = stream_context_create(array('http' => array('timeout' => 60)));
+		foreach ($arr_parse_train as $k => $v) {
+			//echo '<pre>'.$this->arr_parse_datetime[1].' '.$this->arr_parse_datetime[2].':00'.'</pre>';
+			$ar_station=array(	"uid"=>$urlid,
+					     "direct"=>$this->clean_str($v[1]), //РќСѓР¶РЅРѕ РїСЂРѕРІРµСЂРёС‚СЊ
+					      "train"=>intval($v[4]),
+                                              //"abb"=>trim($v[2]),
+			                "beg_station"=>$beg_stat, 
+				   "name_beg_station"=>$name_beg_stat,
+				   "name_end_station"=>$this->clean_str($v[5]),
+				             "expect"=>$this->clean_str($v[6]),
+      				           //"current"=>$this->clean_str($v[7]),
+        			  	  "datestatus"=>date('Y-m-d H:i:s',strtotime($arr_parse_datetime[1].' '.$arr_parse_datetime[2].':00')),
+					        "type"=>$type);
+			// Add direction  				
+			$this->sql_add_station($ar_station);  
+			
+			/* NO USE/$content=file_get_contents($this->url_main.$this->main_page.'?transaction='.$this->trans_train.'&language=e&pbp='.$station.'&znr='.intval($v[4]),false,$ctx);*/
+			/* NO USE/$this->sql_ins_infotrains($this->trans_train,'e',trim($v[2]),$station,trim($v[5]),intval($v[4]),$this->url_main.$this->main_page.'?transaction='.$this->trans_train.'&language=e&pbp='.$station.'&znr='.intval($v[4]),$content);*/
+			/* NO USE/$this->parse_train($content,$type,$urlid,intval($v[4]),$savdate);*/
+		}
+    }
+
+    /* SQL query add recored stations 
+     * @param array $ar_station - the propeties station
+     */
+    function sql_add_station($ar_station) {
+    	//$id=$this->genid();
+    	//echo $ar_station["datestatus"];
+    	$sql="INSERT INTO stations SET ".
+    		 	//"id='".$id."',".
+    	        "uid='".$ar_station["uid"]."',".
+    		 	"direct='".$ar_station["direct"].":00',".
+    		 	"train=".$ar_station["train"].",".
+    			//"abb='".$ar_station["abb"]."',".
+    			"beg_station='".$ar_station["beg_station"]."',".
+    			"name_beg_station='".$this->clean_str($ar_station["name_beg_station"])."',".
+    			"name_end_station='".$this->clean_str($ar_station["name_end_station"])."',".
+    			"expect='".$ar_station["expect"].":00',".
+    			//"current='".$ar_station["current"]."',".
+    	        "datestatus='".$ar_station["datestatus"]."',". 
+    		    "type=".$ar_station["type"].",".
+    			"act='N',".
+    			"del='N',".
+    			"datecreate=now();";
+         mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+
+    /* Parse rows to body of table the train 
+     * @param string $cont_exp - string to parser
+     * return array
+     */
+    function parse_rows_train($cont_exp) {
+    	//$cont_exp='<td><a href="javascript:getPBP(\'SIR\')">&nbsp;Sirnach</a></td><td align="center">15:45</td><td align="center">15:45</td><td align="center">15:45</td><td align="center">15:45</td><td align="center">departed</td>';
+    	preg_match_all('/\<td[^>]*\>\<a[^>]*href\=\"javascript\:getPBP\(\'([A-Z]+)\'\)\"\>([^<]+)\<\/a\>\<\/td\>\<td[^>]+\>([^<]*)\<\/td\>\<td[^>]+\>([^<]*)\<\/td\>\<td[^>]*\>([^<]*)\<\/td\>\<td[^>]*\>([^<]*)\<\/td\>\<td[^>]*\>([^<]*)\<\/td\>/i',$cont_exp, $matches, PREG_SET_ORDER);
+        //echo "<pre>";print_r($matches);echo "</pre>";
+        return $matches;
+    }
+
+    /* Parse datetime to body of table the train 
+     * @param string $cont_exp - string to parser
+     * return array
+     */
+    function parse_datetime_train($cont_exp) {
+    	/*$cont_exp='<td align="center"><a href="mainsite_e.html" target="_top">Train Station Information</a></td><td align="center"><a href="help/help_e.html#Zuglauf" target="_blank">Help</a></td><td align="center"><a href="index_e.html">Home</a></td><td align="center">
+        Status: 08.09.2010 / 10:44</td>';*/
+    	preg_match('/\<td[^>]*\>\<a[^>]*\>[^<]*\<\/a\>\<\/td\>\<td[^>]*\>\<a[^>]*\>[^<]*\<\/a\>\<\/td\>\<td[^>]*\>\<a[^>]*\>[^<]*\<\/a\>\<\/td\>\<td[^>]*\>[\s\n]*[a-zA-Z\:\s]+[\s]*([0-9\.]+)[\s\/]*([\:0-9]+)\<\/td\>/i', $cont_exp, $matches);
+        //echo "<pre>";print_r($matches);echo "</pre>";
+        return $matches;
+    }
+    
+    /*NO USE!/ Parse station
+     * @param string $cont_exp - body station
+     * @param int $type  - type parse
+     * @param string $urlid - ID - record urlbox
+     * @param string $train - number of train      
+     */
+    function parse_train($cont_exp, $type, $urlid, $train ) {
+		$arr_parse_train=$this->parse_rows_train($cont_exp);
+		$arr_parse_datetime=$this->parse_datetime_station($cont_exp);
+		foreach ($arr_parse_train as $k => $v) {
+			$ar_train=array(     "station"=>$v[1],
+					"name_station"=>$this->clean_str($v[2]),
+					      "direct"=>$type,
+					       "train"=>$train,
+                                                 "uid"=>$urlid,
+			                       "arriv"=>$this->clean_str($v[3]),
+                                              "depart"=>$this->clean_str($v[4]),
+				            "arriv_exp"=>$this->clean_str($v[5]),
+                                           "depart_exp"=>$this->clean_str($v[6]),
+					      "current"=>$v[7],
+			                   "datestatus"=>date('Y-m-d H:i:s',strtotime($arr_parse_datetime[1].' '.$arr_parse_datetime[2].':00')));
+                        $this->sql_add_train($ar_train);
+		}
+    }
+    
+    /*NO USE!/ SQL query add recored trains*/
+    function sql_add_train($ar_train) {
+    	$id=$this->genid();
+    	$sql="INSERT INTO trains SET ".
+    		 	"id='".$id."',".
+    			"station='".$ar_train["station"]."',".
+    		 	"name_station='".$this->clean_str($ar_train["name_station"])."',".
+    		 	"direct=".$ar_train["direct"].",".
+    			"train=".$ar_train["train"].",".
+    			"uid='".$ar_train["uid"]."',".
+    			"arriv='".$ar_train["arriv"].":00',".
+    			"depart='".$ar_train["depart"].":00',".
+    			"arriv_exp='".$ar_train["arriv_exp"].":00',".
+    		    "depart_exp='".$ar_train["depart_exp"].":00',".
+    			"current='".$ar_train["current"]."',".
+    			"datestatus='".$ar_train["datestatus"]."',".
+    			"del='N',".
+    			"act='Y',".
+    			"datecreate=now();";
+         mysql_query($sql) or die(mysql_error().'<br>'.$sql.'<br>');
+    }
+              
+    /* Clean string from garbage (&nbsp; and script_tags)
+     * 
+     */
+    function clean_str($str_exp='') {
+    	//return trim(str_replace("&nbsp;"," ", strip_tags($str_exp)));
+    	//return trim(str_replace("&nbsp;"," ",$this->ec_simple($str_exp)));
+    	//return trim(str_replace("&nbsp;"," ",$str_exp));
+    	return trim(str_replace("&nbsp;"," ",$this->umlaute($str_exp)));
+    }
+    
+    /* Mark about treatment
+     * @param int id - Number record 
+     */
+   function mark_treatrec($id) {
+       if (trim($this->is_delmark)=='Y'){
+   	       $this->sql_del_rec_urlbox($id);
+       }else if (trim($this->is_delmark)=='All'){
+           $this->sql_update_rec_urlbox($id);
+   	       $this->sql_del_rec_urlbox();
+       }else{
+           $this->sql_update_rec_urlbox($id);
+       }
+    }
+
+    /* Cancel mark about treatment
+     * @param int id - Number record 
+     */
+    function mark_notreatrec($id) {
+		$this->sql_update_rec_urlbox($id,false);
+    }
+    
+    /* SQL update records table urlbox
+     * @param int $id - Number record 
+     * @param boolean $treat - is treat
+     */
+    function sql_update_rec_urlbox($id, $treat=true) {
+    	if ($treat) {
+    		$act='N';
+    	}else{
+    		$act='Y';
+    	}
+
+    	$sql="UPDATE infostations
+    			SET act='".$act."',
+    			    dateupdate=now()
+    			WHERE id='".$id."';";
+    	mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+    }
+
+    /* SQL update records table urlbox
+     * 
+     */
+    function sql_del_rec_urlbox($id='') {
+    	$sql="DELETE FROM infostations ";
+        $sql.="WHERE act='N' ";
+        if (trim($id)<>'') {
+            $sql.=" and id='".$id."' ";
+        }
+    	mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+    }
+
+    /* SQL from stations "show me in detail the 10 trainnumbers which have most often a delay of at least 5 minutes over last month"    
+     * @param int $cnt default 10 - count trains;
+     * @param int $least default 300 - least
+     * @param string $period default 'mount' - perion delay
+     */
+    function sql_sel_trains($cnt_trains=10, $least=300, $period='mount') {
+		//!!!
+	  	$sql="SELECT train, beg_station, name_beg_station, name_end_station, direct, expect, ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect)) / 60 as delay, datestatus
+	          FROM stations
+	          WHERE ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect)) >= ".($least - 1)." and type=1 and "
+	  		  //.$this->strsql_where_per_dt('datestatus', $period, '', false)."
+	  		  .$this->strsql_where_per_dt("(datestatus - INTERVAL TIME_FORMAT(datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(direct,'%H:%i') HOUR_MINUTE)", $period, '', false)." 
+	          ORDER BY train          
+	          LIMIT ".$cnt_trains." OFFSET 0;";
+	  	//echo "<pre>sql_sel_trains=>".$sql."</pre>";
+	    $res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>'); 	 
+	    return $res;
+    }
+
+    /* Show of Select trains in detail the if */
+    function show_sel_trains() {
+    	$res=$this->sql_sel_trains();
+        $title='<div style="color:green;font-weight:bold;padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center">Show to you the 10 trainnumbers which have most often a delay of at least 5 minutes over last month</div></div>'.chr(13);
+        $beg_table='<table width="100%" border="1" bordercolor="#c0c0c0" cellpadding="1" cellspacing="0">'.chr(13);
+        $shap_table='<tbody>
+        				<th>Train</th>
+        				<th>Abbs</th>
+        				<th>From Station</th>
+       					<th>To Station</th>
+        				<th>Time Direction</th>
+        				<th>Time Expected</th>
+        				<th>Delay</th>
+        				<th>Comment</th>
+        				<th>Date status</th>
+        			</tbody>'; 
+    	$trs_table='';
+    	while ($row=mysql_fetch_array($res)) {
+    	  	$trs_table.='<tr>
+   	  						<td>'.$row["train"].'</td>
+    	  					<td>'.$row["beg_station"].'</td>
+    	  					<td>'.$row["name_beg_station"].'</td>
+    	  					<td>'.$row["name_end_station"].'</td>
+    	  					<td align="center">'.$row["direct"].'</td>
+    	  					<td align="center">'.$row["expect"].'</td>
+    	  					<td align="right">'.$this->my_decimal(($row["delay"]/60)).'&nbsp;min&nbsp;</td>
+    	  					<td>'.(trim($row["comment"])<>'' ? $row["comment"] : '&nbsp;').'</td>
+    	  					<td align="center">'.$row["datestatus"].'</td>
+    	  				</tr>';	
+    	}
+    	$end_table='</table>'.chr(13);
+    	echo $title.$beg_table.$shap_table.$trs_table.$end_table;
+    	
+    }
+    
+    /* Set paramets sql query
+     * @param string $format - format 
+     * @param string $station - station
+     * @param int $trainno - number train
+     * @param int $delay - number delay
+     * @param string period - period
+     * @param int $per_cnt - count train of the period
+     * @param boolean $not - not
+     */
+    function set_parms_sql($format, $station, $trainno, $limit, $delay, $period, $per_cnt, $not=false){
+       	return array('format'=>$format, 
+       		     'station'=>$station, 
+       		     'trainno'=>$trainno, 
+       		       'limit'=>$limit, 
+       		       'delay'=>$delay, 
+       		      'period'=>$period, 
+       		     'per_cnt'=>$per_cnt,
+       			 'not'=>$not);
+    }
+    
+    /* Show sql to XML kind
+     * return string
+     */
+    function show_xmlsql( $sql='') {
+        //echo "<pre> sql=".$sql."</pre>";
+    	$res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+    	$xml_data = '<?xml version="1.0" encoding="utf-8" ?'.'>'.chr(13);
+		$xml_data .= '<'.$this->curr_db.'>'.chr(13);
+		while ($line = mysql_fetch_row($res)) {
+    		$i = 0;
+    		$xml_data .= '	<'.$this->curr_table.'>'.chr(13);
+    		foreach ($line as $col_value) {
+        		$field_name = mysql_field_name($res, $i++);
+        		$xml_data .= '		<'.$field_name.'>'.$col_value.'</'.$field_name.'>'.chr(13);
+    		}
+    		$xml_data .= '	</'.$this->curr_table.'>'.chr(13);
+		}
+		$xml_data .= '</'.$this->curr_db.'>';
+		// Send result to brauser
+    	header('Content-Type: text/xml');
+		//echo htmlspecialchars($xml_data);
+		echo $xml_data;
+    }
+
+    /* Show info
+     * @param string $sql - string sql query
+     * return string 
+     */
+    function show_info($sql='') {
+      $res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+      if (trim($this->title)<>'') {
+        echo '<div style="padding-left:20px; font-size:14px;font-style: Arial">'.$this->title."</div>";
+      }
+      while ($line = mysql_fetch_row($res)) {
+        $i=0;
+        //print_r($line);
+        $templ=$this->templates;
+
+        foreach ($line as $col_value) {
+          $field_name= mysql_field_name($res, $i++);
+          $templ=str_replace('<%'.trim($field_name).'%>','<b style="color:blue;">'.$col_value.'</b>',$templ);
+        }
+        echo '<div style="padding-left:20px; font-size:12px;font-style: Arial">'.$templ."</div>";
+      }
+    }
+
+    /* SQL from stations "show me the 10 trainnumbers which have most often a delay of at least 5 minutes over last month"
+     * @param array $arr_parms - array params sql query
+     * return string
+     */    
+    function sql_sel_dist_trains($arr_parms) {
+    	$this->curr_table='stations';
+    	$station=$arr_parms["station"];
+    	$cnt_trains=intval($arr_parms["level"]);
+    	$least=intval($arr_parms["delay"])*60;
+    	$period=$arr_parms["period"];
+    	$value_period=intval($arr_parms["per_cnt"]);
+
+    	if ($station<>'') {
+    		$st="and (beg_station='".$station."') ";
+    	}else{
+    		$st='';
+    	}
+    	if ($cnt_trains==0) {
+    		$cnt_trains=10;
+        }
+        if ($least==0) {
+            $least=300;
+        }
+        if ($period===''){
+        	$period='quarter';
+        } 
+        if ($value_period==0) {
+        	$value_period=15;
+        }
+        
+		//!!!
+	  	$sql="SELECT DISTINCT train
+	          FROM ".$this->curr_table."
+	          WHERE ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect)) >= ".($least - 1)." and type=1 and "
+	  	      //.$this->strsql_where_per_dt('datestatus', $period, '', false, $value_period)."
+	  	      .$this->strsql_where_per_dt("(datestatus - INTERVAL TIME_FORMAT(datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(direct,'%H:%i') HOUR_MINUTE)", $period, '', false, $value_period)." 
+	          ORDER BY train
+	          LIMIT ".$cnt_trains." OFFSET 0;";
+	  	
+	  	return $sql;
+    }
+
+    /* Result select district trains
+     * @param array $arr_parms - array params sql query
+     * return string
+     */   
+    function res_sel_dist_trains($arr_parms) {
+	  	$sql=$this->sql_sel_dist_trains($arr_parms);
+	  	//echo "<pre>sql_sel_trains=>".$sql."</pre>";
+	    $res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>'); 	 
+	    return $res;
+    }
+
+    /* Show of Select trains the if
+     * @param array $arr_parms - array params sql query
+     */
+    function show_sel_dist_trains($arr_parms) {
+    	$format=$arr_parms["format"];
+    	switch ($format) {
+    		case 'html':    	
+		    	$res=$this->res_sel_dist_trains($arr_parms);
+		        $title='<div style="color:green;font-weight:bold;padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center">Show to you the 10 trainnumbers which have most often a delay of at least 5 minutes over last month</div></div>'.chr(13);
+		        $beg_table='<div align="center" width="100%"><table border="2" bordercolor="#c0c0c0" cellpadding="1" cellspacing="0">'.chr(13);
+		        $shap_table='<tbody>
+		        				<th>Train</th>
+		        			</tbody>'; 
+		    	$trs_table='';
+		    	while ($row=mysql_fetch_array($res)) {
+		    	  	$trs_table.='<tr>
+		   	  						<td>'.$row["train"].'</td>
+		    	  				</tr>';	
+		    	}
+		    	$end_table='</table></div>'.chr(13);
+		    	echo $title.$beg_table.$shap_table.$trs_table.$end_table;
+		    	//echo ('<p><center>Time show to you the 10 trainnumbers which have most often a delay of at least 5 minutes over last month, c: '.$timer->time_rez().'</center></p>');
+				echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time show to you the 10 trainnumbers which have most often a delay of at least 5 minutes over last month, c: '.$timer->time_rez().'</center></div></div>');
+		    	break;
+    		case 'xml':
+    			$sql=$this->sql_sel_dist_trains($arr_parms);
+    			$this->show_xmlsql($sql);
+    			break;
+    		case 'rss':
+    			break;
+    		case 'json':
+    			break;
+    		default:
+    			$sql=$this->sql_sel_dist_trains($arr_parms);
+    			$this->show_xmlsql($sql);
+    			break;
+    	}
+    	
+    }
+    
+    /* SQL from stations "show me in detile the 10 train stations that has hte highest percentage 
+     * of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months"
+     * @param int $cnt_stations - count station
+     * @param int $least - least
+     * @param string period - period show
+     * @return string or boolean
+     */   
+    function sql_sel_stations($cnt_stations=10, $least=300, $period='quarter') {
+		//!!!
+	  	$sql="SELECT train, type, beg_station, name_beg_station, FLOOR((100/count(*))) as procent, sum(ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))/60) as sum_delay, ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))/60 as delay
+	          FROM stations
+	          WHERE ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))) >= ".($least - 1)." and type=1 and "
+	  		  //.$this->strsql_where_per_dt('datestatus', $period, '', false)."
+	  		  .$this->strsql_where_per_dt("(datestatus - INTERVAL TIME_FORMAT(datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(direct,'%H:%i') HOUR_MINUTE)", $period, '', false)." 
+	          GROUP BY beg_station 
+	          ORDER BY procent, train
+	          LIMIT ".$cnt_stations." OFFSET 0;";
+	  	//echo "<pre>sql_sel_stations=>".$sql."</pre>";
+	    $res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>'); 	 
+	    return $res;
+    }
+
+    /* Show of Select stations in detile the if
+     * 
+     */
+    function show_sel_stations() {
+    	$res=$this->sql_sel_stations();
+        $title='<div style="color:green;font-weight:bold;padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center">Show to you the 10 train stations that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months</div></div>'.chr(13);
+        $beg_table='<table width="100%" border="1" bordercolor="#c0c0c0" cellpadding="1" cellspacing="1">'.chr(13);
+        $shap_table='<tbody>
+        				<th>Train</th>
+        				<th>Abbs</th>
+        				<th>From Station</th>
+        				<th>Procent</th>
+        				<th>Summ Delay</th>
+        			</tbody>'; 
+    	$trs_table='';
+    	while ($row=mysql_fetch_array($res)) {
+    	  	$trs_table.='<tr>
+    	  					<td>'.$row["train"].'</td>
+    	  					<td>'.$row["beg_station"].'</td>
+    	  					<td>'.$row["name_beg_station"].'</td>
+    	  					<td align="right">'.floor($row["procent"]).'&nbsp;%&nbsp;</td>
+    	  					<td align="right">'.$this->my_decimal($row["sum_delay"]).'&nbsp;</td>
+    	  				</tr>';	
+    	}
+    	$end_table='</table>'.chr(13);
+    	echo $title.$beg_table.$shap_table.$trs_table.$end_table;
+    }
+    
+    /* SQL from stations "show me the 10 train stations that has hte highest percentage of trains that arrive at the station 
+     * with a delay of at least 5 minutes over the last 3 months"
+     * @param array $arr_parms - params sql query
+     * return string
+     */
+   
+    function sql_sel_dist_stations($arr_parms) {
+    	$this->curr_table='stations';
+    	$station=$arr_parms["station"];
+    	$cnt_station=intval($arr_parms["level"]);
+    	$least=intval($arr_parms["delay"])*60;
+    	$period=$arr_parms["period"];
+    	$value_period=intval($arr_parms["per_cnt"]);
+    	
+    	if ($station<>'') {
+    		$st="and (beg_station='".$station."') ";
+    	}else{
+    		$st='';
+    	}
+    	if ($cnt_station==0) {
+    		$cnt_stations=10;
+        }
+        if ($least==0) {
+            $least=300;
+        }    
+        if ($period===''){
+        	$period='quarter';
+        } 
+        if ($value_period==0) {
+        	$value_period=15;
+        }
+        
+		//!!!
+	  	$sql="SELECT DISTINCT beg_station,name_beg_station, FLOOR((100/count(*))) as procent, sum(ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))/60) as sum_delay
+	          FROM ".$this->curr_table."
+	          WHERE ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect)) >= ".($least - 1)." and type=1 and "
+	  		  //.$this->strsql_where_per_dt('datestatus',$period, '', false, $value_period)."
+	  		  .$this->strsql_where_per_dt("(datestatus - INTERVAL TIME_FORMAT(datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(direct,'%H:%i') HOUR_MINUTE)",$period, '', false, $value_period)."
+	          GROUP BY beg_station 
+	          ORDER BY procent, train
+	          LIMIT ".$cnt_stations." OFFSET 0;";
+	  	return $sql;
+    }
+    
+    /* Result SQL from stations "show me the 10 train stations that has hte highest percentage of trains that arrive at the station wit a delay 
+     * of at least 5 minutes over the last 3 months"
+     * @param array $arr_parms - params sql query
+     * return string or boolean
+     */
+    function res_sel_dist_stations($arr_parms) {
+    	$sql=$this->sql_sel_dist_stations($arr_parms);
+	  	//echo "<pre>sql_sel_stations=>".$sql."</pre>";
+	    $res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>'); 	 
+	    return $res;
+    }
+
+    /* Show of Select stations the if
+     * 
+     */
+    function show_sel_dist_stations($arr_parms) {
+    	$format=$arr_parms["format"];
+    	switch ($format) {
+    		case 'html':
+		    	$res=$this->res_sel_dist_stations($arr_parms);
+		        $title='<div style="color:green;font-weight:bold;padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center">Show to you the 10 train stations that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months</div></div>'.chr(13);
+		        $beg_table='<div align="center" width="100%">
+		        			<table width="100%" border="1" bordercolor="#c0c0c0" cellpadding="1" cellspacing="1">'.chr(13);
+		        $shap_table='<tbody>
+		                        <th>Abbs</th>
+		        				<th>Station</th>
+		        				<th>Procent</th>
+		        				<th>Summ Delay</th>
+		        			</tbody>'; 
+		    	$trs_table='';
+		    	while ($row=mysql_fetch_array($res)) {
+		    	  	$trs_table.='<tr>
+		    	  					<td>'.$row["beg_station"].'</td>
+		    	  					<td>'.$row["name_beg_station"].'</td>
+		    	  					<td align="right">'.floor($row["procent"]).'&nbsp;%&nbsp;</td>
+		    	  					<td align="right">'.$this->my_decimal($row["sum_delay"]).'&nbsp;</td>
+		    	  				</tr>';	
+		    	}
+		    	$end_table='</table>
+		    				</div>'.chr(13);
+		    	echo $title.$beg_table.$shap_table.$trs_table.$end_table;
+		    	//echo ('<p><center>Time show to you the 10 train stations that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months, c: '.$timer->time_rez().'</center></p>');
+				echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time show to you the 10 train stations that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months, c: '.$timer->time_rez().'</center></div></div>');
+		    	
+		    	break;
+    		case 'xml':
+    			$sql=$this->sql_sel_dist_stations($arr_parms);
+    			$this->show_xmlsql($sql);
+    			break;
+    		case 'json':
+    			break;
+    		default:
+    			$sql=$this->sql_sel_dist_stations($arr_parms);
+    			$this->show_xmlsql($sql);
+    			break;
+    	}
+    }
+
+    
+    /* For Debug: SQL from stations "show me all in detile trains with a delay of 5 minutes that will leave from Geneva in the next15 minutes"
+     * @param int $cnt_station default 10 - count stations;
+     * @param int $least default 300 - least;
+     * @param string $period default 'minute' - period show in detile trains;
+     * @param int $value_period - value period;
+     * return string or boolean
+     */   
+    function sql_sel_all_trains($cnt_stations=10, $least=300, $period='minute', $value_period=15) {
+		//!!!
+	  	$sql="SELECT train, beg_station, name_beg_station, name_end_station, direct, expect, ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))/60 as delay, datestatus
+	          FROM stations
+	          WHERE ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect)) >= ".($least - 1)." and type=1 and "
+	  	      //.$this->strsql_where_per_dt('datestatus',$period,'',false, $value_period)."
+	  	      .$this->strsql_where_per_dt("(datestatus - INTERVAL TIME_FORMAT(datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(direct,'%H:%i') HOUR_MINUTE)",$period,'',false, $value_period)."
+	          ORDER BY train;";
+	  	//echo "<pre>sql_sel_all_trains=>".$sql."</pre>";
+	    $res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>'); 	 
+        return $res;
+    }
+    
+    /* For Debug: Show of Select All trains in detile the if
+     * 
+     */
+    function show_sel_all_trains() {
+    	$res=$this->sql_sel_all_trains();
+        $title='<div style="color:green;font-weight:bold;padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center">Show to you all trains with a delay of 5 minutes that will leave from all stations in the next 15 minutes</div></div>'.chr(13);
+        $beg_table='<table width="100%" border="1" bordercolor="#c0c0c0" cellpadding="1" cellspacing="0">'.chr(13);
+        $shap_table='<tbody>
+        				<th>Train</th>
+        				<th>Abbs</th>
+        				<th>From Station</th>
+        				<th>To Station</th>
+        				<th>Time Direction</th>
+        				<th>Time Expected</th>
+        				<th>Delay</th>
+        				<th>Comment</th>
+        				<th>Date status</th>
+        			</tbody>'; 
+    	$trs_table='';
+    	while ($row=mysql_fetch_array($res)) {
+    	  	$trs_table.='<tr>
+    	  					<td>'.$row["train"].'</td>
+    	  					<td>'.$row["beg_station"].'</td>
+    	  					<td>'.$row["name_beg_station"].'</td>
+    	  					<td>'.$row["name_end_station"].'</td>
+    	  					<td align="center">'.$row["direct"].'</td>
+    	  					<td align="center">'.$row["expect"].'</td>
+    	  					<td align="right">'.$this->my_decimal($row["delay"]/60).'&nbsp;min&nbsp;</td>
+    	  					<td>'.(trim($row["comment"])<>'' ? $row["comment"] : '&nbsp;').'</td>
+    	  					<td align="center">'.$row["datestatus"].'</td>
+    	  				</tr>';	
+    	}
+    	$end_table='</table>'.chr(13);
+    	echo $title.$beg_table.$shap_table.$trs_table.$end_table;
+    }
+    
+    
+    /* SQL from stations "show me all trains with a delay of 5 minutes that will leave from Geneva in the next 15 minutes"
+     * @param array $arr_parms - array parameters for sql query
+     * return string
+     */
+    function sql_sel_dist_all_trains($arr_parms) {
+    	$this->curr_table='stations';
+    	$station=$arr_parms["station"];
+    	$cnt_station=intval($arr_parms["level"]);
+    	$least=intval($arr_parms["delay"])*60;
+    	$period=$arr_parms["period"];
+    	$value_period=intval($arr_parms["per_cnt"]);
+    	
+    	if ($station<>'') {
+    		$st="and (beg_station='".$station."') ";
+    	}else{
+    		$st='';
+    	}
+    	if ($cnt_station==0) {
+    		$cnt_stations=10;
+        }
+        if ($least==0) {
+            $least=300;
+        }    
+        if ($period===''){
+        	$period='minute';
+        } 
+        if ($value_period==0) {
+        	$value_period=15;
+        }
+        
+		//!!!
+	  	$sql="SELECT DISTINCT train, beg_station, name_beg_station
+	          FROM ".$this->curr_table."
+	          WHERE ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect)) >= ".($least - 1)." and type=1 and "
+	  	      //.$this->strsql_where_per_dt('datestatus',$period,'',false, $value_period)." ".$st."
+	  	      .$this->strsql_where_per_dt("(datestatus - INTERVAL TIME_FORMAT(datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(direct,'%H:%i') HOUR_MINUTE)",$period,'',false, $value_period)." ".$st."
+	          GROUP BY train
+	          ORDER BY train, beg_station;";
+	  	
+	  	//echo "<pre>sql_sel_all_trains=>".$sql."</pre>";
+	    return $sql;
+    
+    }
+    
+    /* Result from stations "show me all trains with a delay of 5 minutes that will leave from Geneva in the next 15 minutes"
+     * @param array $arr_parms - array parameters for sql query
+     * rerun boolean or string
+     */   
+    function res_sel_dist_all_trains($arr_parms) { 	
+      	$sql=$this->sql_sel_dist_all_trains($arr_parms);
+	    $res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>'); 	 
+        return $res;
+    }
+    
+    /* Show of Select All trains the if
+     * @param array $arr_parms - array parameters for sql query
+     */
+    function show_sel_dist_all_trains($arr_parms) {
+    	$format=$arr_parms["format"];
+    	switch ($format) {
+    		case 'html':
+    			$res=$this->res_sel_dist_all_trains($arr_parms);
+    			$title='<div style="color:green;font-weight:bold;padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center">Show to you all trains with a delay of 5 minutes that will leave from '.$station.' in the next 15 minutes</div></div>'.chr(13);
+        		$beg_table='<div align="center" width="100%"><table border="1" bordercolor="#c0c0c0" cellpadding="1" cellspacing="1">'.chr(13);
+        		$shap_table='<tbody>
+        						<th>Train</th>
+        						<th>Abbs</th>
+        						<th>From Station</th>
+        					</tbody>'; 
+    			$trs_table='';
+    			while ($row=mysql_fetch_array($res)) {
+    	  			$trs_table.='<tr>
+    	  							<td>'.$row["train"].'</td>
+    	  							<td>'.$row["beg_station"].'</td>
+    	  							<td>'.$row["name_beg_station"].'</td>
+    	  						</tr>';	
+    			}
+    			$end_table='</table></div>'.chr(13);
+    			echo $title.$beg_table.$shap_table.$trs_table.$end_table;
+    			//echo ('<p><center>Time show to you all trains with a delay of 5 minutes that will leave from Geneva in the next 15 minutes, c: '.$timer->time_rez().'</center></p>');
+				echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time show to you all trains with a delay of 5 minutes that will leave from '.$station.' in the next 15 minutes, c: '.$timer->time_rez().'</center></div></div>');
+    			
+    			break;
+    		case 'xml':
+    			$sql=$this->sql_sel_dist_all_trains($arr_parms);
+    			$this->show_xmlsql($sql);
+    			break;
+    		case 'json':
+    			break;
+    		case 'rss':
+    			break;
+    		default:
+    			$sql=$this->sql_sel_dist_all_trains($arr_parms);
+    			$this->show_xmlsql($sql);
+    			break; 
+    	}
+    }
+
+    /* Count trains 
+     * 
+     */
+    function sql_cnt_trains() {
+    	$sql="SELECT count(*) as cnt FROM stations where act='N' GROUP BY train";
+    	$res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+    	return mysql_num_rows($res);
+    }
+
+    /* Count records
+     * 
+     */
+    function sql_cnt_records() {        
+    	$sql="SELECT count(*) as cnt FROM stations";
+    	$res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+    	while ($row=mysql_fetch_array($res)) {
+    		return $row["cnt"];	
+    	}    	
+    }
+    
+    /* Count stations
+     * 
+     */
+    function sql_cnt_stations() {
+    	$sql="SELECT count(*) as cnt FROM stations where act='N' GROUP BY beg_station";
+    	$res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+    	return mysql_num_rows($res);
+    }
+    
+    /* Count action trains
+     * 
+     */
+    function sql_act_trains() {
+        $sql="UPDATE stations SET
+        		act='Y' where act='N'";
+        mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+    }
+
+    /* Get name period
+     * @param string $period - name period
+     */
+    function get_name_el_period($period) {
+        switch($period) {
+            case 'lastday':
+                $elper='day';
+                break;
+            case 'lastmonth':
+                $elper='month';
+                break;
+            case 'lastweek':
+                $elper='week';
+                break;
+            default:
+                $elper=$period;
+                break;
+        }
+        return $elper;
+    }
+
+    /**Select records for parametrs
+     * @param array $arr_parms - array parameters for sql query
+     * return string
+     */
+    function sql_sel_records($arr_parms) {
+    	
+    	$exp_fields=$exp_where=$exp_join=$exp_order=$exp_group=$exp_limit='';
+    	
+       	$this->curr_table='stations';
+
+       	$station=$arr_parms["station"]; 		  		//Indicated station
+    	$train=$arr_parms["trainno"]; 		  	    	//Indicated trainno
+
+    	$limit=intval($arr_parms["limit"]);     		//Indicated Count of stations
+
+    	$least=$arr_parms["delay"];         	  		//Indicated Delay
+
+    	$period=$arr_parms["period"];             		//Indicated period
+
+        $elper=$this->get_name_el_period(trim($period));
+
+    	$value_period=intval($arr_parms["per_cnt"]);    //Indicated count period
+
+
+    	$not=$arr_parms["not"];
+
+        if ($station<>'' && !($station=='all')) {
+    		$st="(beg_station='".$station."') ";
+    	}else{
+    		$st='';
+    	}
+
+    	if ($train<>'') {
+    		$tr="(train='".$train."') "; 
+    	}else{
+    		$tr='';
+    	}
+    	
+    	/*if ($limit==0) {
+    		$limit=10;
+        }
+        if ($least==0) {
+            $least=300;
+        }    
+        if ($period===''){
+        	$period='minute';
+        }
+        if ($value_period==0) {
+        	$value_period=15;
+        }*/
+
+        if (intval($least)<>0) {
+           	$exp_where="ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect)) >= ".((intval($least)*60) - 1)." and type=1 "; //!!!
+        }else if (trim($least)=='mostdelay') {
+           	$exp_where="ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect)) >0 and type=1 "; //!!!
+        }else{
+           	$exp_where="type=1 ";
+        }
+
+        if ($period) {
+        	if (trim($exp_where)<>'') {
+        		$exp_where.=" and ";
+        	}
+        	//$exp_where.=$this->strsql_where_per_dt('datestatus',$period,'',$not, $value_period)." ";
+        	$exp_where.=$this->strsql_where_per_dt("(datestatus - INTERVAL TIME_FORMAT(datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(direct,'%H:%i') HOUR_MINUTE)",$period,"",$not, $value_period)." ";
+        }
+
+        if (trim($exp_where)<>'') {
+        	if ($st<>'') {
+           		$exp_where.=" and ".$st;
+        	}
+        }else{
+           	$exp_where.=" ".$st;
+        }
+
+        if (trim($exp_where)<>'') {
+        	if ($tr<>''){
+           		$exp_where.=" and ".$tr;
+        	}
+        }else{
+           	$exp_where.=" ".$tr;
+        }
+
+        //!!!
+        if (isset($_GET['lastday']) and is_numeric($_GET['lastday'])) {
+            $exp_where .= ' AND ' . 'datestatus > "' . date('Y-m-d H:i:s', time() - $_GET['lastday'] * 3600 * 24) . '" ';
+        }
+
+        if ($station<>'') {
+        	if (trim($station)=='all') {
+
+                $exp_fields='train, beg_station, name_beg_station, direct, expect';
+        		$exp_group='train';
+        	    $exp_order='train, beg_station';
+
+                if (trim($least)=='info') {
+                    // List info on all station
+                     /*Per station, a percentage of the no. of trains that are not in time (so have a delay) during a certain period, and the average delay.
+                       "The station of Zurich had in the last 3 months 8% of the trains delayed, with an average delay of 3 minutes per delayed train".*/
+
+                    // Info in station
+                    $this->templates='The station of <%station%> had in the last <b style="color:blue">'.$value_period.' '.$elper.'(s)</b> <%procent%>% of the trains delayed, with an average delay of <%middle_delay%> minutes per delayed train';
+
+            		$exp_fields="s.beg_station, s.name_beg_station as 'station',  TRUNCATE((d.cnt_delay/COUNT(DISTINCT s.train))*100,2) as 'procent',
+                            	   TRUNCATE(sum(ABS(TIME_TO_SEC(s.direct)-TIME_TO_SEC(s.expect))/60)/COUNT(DISTINCT s.train),2) as 'middle_delay'";
+	    			$exp_group=' s.beg_station';
+                    $exp_table=" stations s,
+	                            (SELECT b.beg_station, b.train, COUNT(DISTINCT b.train) as cnt_delay
+                                 FROM stations b
+                        	  	 WHERE ((b.datestatus
+                                 		 - INTERVAL TIME_FORMAT(b.datestatus,'%H:%i') HOUR_MINUTE
+                               			 + INTERVAL TIME_FORMAT(b.direct,'%H:%i') HOUR_MINUTE)
+                                		BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                		AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                		and ABS(TIME_TO_SEC(b.direct)-TIME_TO_SEC(b.expect))>0
+                        		 GROUP BY b.beg_station) d ";
+	                $exp_order='s.beg_station, procent DESC';
+                    if (trim($exp_where)<>'') {
+                        $exp_where=str_replace('beg_station','s.beg_station',$exp_where);
+                        $exp_where=str_replace('datestatus','s.datestatus',$exp_where);
+                        $exp_where=str_replace('direct','s.direct',$exp_where);
+                        $exp_where.=' and s.beg_station=d.beg_station';
+                    }
+                }else if(trim($least)=='mostdelay'){
+                    /*Which trains are the most delayed trains in switzerland, and in what station.
+                    "Train 123 had the last 3 months a delay on 30 days (33%), with an average delay of 7 minutes, and the largest delay 55 minutes. The train is often most delayed in the station Zurich.*/
+                    $this->templates='Train <%train%> had in the last <b style="color:blue">'.$value_period.' '.$elper.'(s)</b> a delay on <%days_delay%> days (<%procent%>%),'.
+                                     ' with an average delay of <%avgest_delay%> minutes, and the largest delay <%largest_delay%> minutes.'
+                                     .' The train is often most delayed in the station <%name_beg_station%>.';
+               		$exp_fields="c.name_beg_station, c.beg_station, c.train, MAX(c.cnt_delay) as 'cnt_delay', x.days_delay,
+                                 TRUNCATE(((x.days_delay/e.days)*100),2) as 'procent', s.avgest_delay, s.largest_delay";
+
+                    $exp_table="( SELECT d.name_beg_station, d.beg_station,d.train,COUNT(*) as 'cnt_delay'
+                                  FROM stations d
+                            	  WHERE ((d.datestatus
+                                   		   - INTERVAL TIME_FORMAT(d.datestatus,'%H:%i') HOUR_MINUTE
+                                   		   + INTERVAL TIME_FORMAT(d.direct,'%H:%i') HOUR_MINUTE)
+                                    	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                    	  AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                    	  AND ABS(TIME_TO_SEC(d.direct)-TIME_TO_SEC(d.expect))>0
+                                  GROUP BY d.beg_station,d.train
+                                  ORDER BY d.beg_station, cnt_delay DESC
+                                ) c,
+                                ( SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days'
+                            	  FROM stations da
+                            	  WHERE ((da.datestatus
+                                  	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                                   		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                                    	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                    	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                            	  GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                            	) e,
+                                ( SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days_delay'
+                            	  FROM stations da
+                            	  WHERE ((da.datestatus
+                                   	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                                   		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                                    	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                    	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                           AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                            	  GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                            	) x,
+                                ( SELECT da.train, TRUNCATE(AVG((ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60)),2) as 'avgest_delay',
+                                  TRUNCATE(MAX(ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60),2) as 'largest_delay'
+                            	  FROM stations da
+                            	  WHERE ((da.datestatus
+                                   	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                                   		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                                    	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                    	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                           AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                            	  GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                    	        ) s ";
+
+                    $exp_where="c.train=e.train and c.train=x.train and c.train=s.train";
+   	    			$exp_group='c.train';
+                    $exp_order='c.train';
+                    /*SELECT c.beg_name_station, c.beg_station, c.train, MAX(c.cnt_delay) as 'cnt_delay',
+                           x.days_delay , TRUNCATE(((x.days_delay/e.days)*100),2) as 'procent',
+                           s.avgest_delay, s.largest_delay
+                    FROM ( SELECT d.beg_name_station, d.beg_station,d.train,COUNT(*) as 'cnt_delay'
+                           FROM stations d
+                    	   WHERE ((d.datestatus
+                           		   - INTERVAL TIME_FORMAT(d.datestatus,'%H:%i') HOUR_MINUTE
+                           		   + INTERVAL TIME_FORMAT(d.direct,'%H:%i') HOUR_MINUTE)
+                            	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                            	  AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                            	  AND ABS(TIME_TO_SEC(d.direct)-TIME_TO_SEC(d.expect))>0
+                           GROUP BY d.beg_station,d.train
+                           ORDER BY d.beg_station, cnt_delay DESC
+                          ) c,
+                          (SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days'
+                    	   FROM stations da
+                    	   WHERE ((da.datestatus
+                           	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                           		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                            	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                            	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                    	   GROUP BY da.train, DATE_FORMAT(da.datestatus,'%Y%m%d')
+                    	  ) e,
+                          (SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days_delay'
+                    	   FROM stations da
+                    	   WHERE ((da.datestatus
+                           	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                           		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                            	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                            	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                   AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                    	   GROUP BY da.train, DATE_FORMAT(da.datestatus,'%Y%m%d')
+                    	  ) x,
+                          (SELECT da.train, TRUNCATE(AVG((ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60)),2) as 'avgest_delay',
+                           TRUNCATE(MAX(ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60),2) as 'largest_delay'
+                    	   FROM stations da
+                    	   WHERE ((da.datestatus
+                           	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                           		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                            	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                            	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                   AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                    	   GROUP BY da.train, DATE_FORMAT(da.datestatus,'%Y%m%d')
+                    	  ) s
+                    WHERE c.beg_station='zue' and c.train=e.train and c.train=x.train and c.train=s.train
+                    GROUP BY c.train
+                    ORDER BY c.train*/
+                }else if (trim($least)=='moststationdelay') {
+                    /*3) Per station, a list of 10 trains that are most delayed.
+                     "In Zurich, over the last month,
+                     train 123 had a delay on 15 days (50%), with an average delay of 5 minutes, and the biggest delay of 58 minutes.*/
+                    $this->title='For All Stations, over the last <b style="color:blue">'.$value_period.' '.$elper.'(s)</b>,';
+                    $this->templates='train <%train%> had a delay on <%days_delay%> days (<%procent%>%),'.
+                                     ' with an average delay of <%avgest_delay%> minutes, and the biggest delay of <%biggest_delay%> minutes.';
+               		$exp_fields="d.beg_station,d.train,COUNT(*) as 'cnt_delay',
+                      	         x.days_delay , TRUNCATE(((x.days_delay/e.days)*100),2) as 'procent',
+             		             s.avgest_delay, s.biggest_delay";
+
+                    $exp_table="stations d,
+                                (SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days'
+                      	  	     FROM stations da
+                      		     WHERE ((da.datestatus
+                             	     	 - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                             		   	 + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                              	   	     BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                              	   	     AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                      				     GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                      	        ) e,
+                      	        (SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days_delay'
+                      	   	     FROM stations da
+                      		     WHERE ((da.datestatus
+                          	   	         - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                             			 + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                              		     BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                              	   	     AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                     	 AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                      	   	     GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                      	  	    ) x,
+                      	        (SELECT da.train, TRUNCATE(AVG((ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60)),2) as 'avgest_delay',
+                          	     TRUNCATE(MAX(ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60),2) as 'biggest_delay'
+                      	   	     FROM stations da
+                      	         WHERE ((da.datestatus
+                             	         - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                             		     + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                              	         BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                              	         AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                         AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                      	   	     GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                      		    ) s";
+
+                    $exp_where="((d.datestatus
+                         	       - INTERVAL TIME_FORMAT(d.datestatus,'%H:%i') HOUR_MINUTE
+                         		   + INTERVAL TIME_FORMAT(d.direct,'%H:%i') HOUR_MINUTE)
+                          	       BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                          	       AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                          	       AND ABS(TIME_TO_SEC(d.direct)-TIME_TO_SEC(d.expect))>0
+                         		   and d.train=e.train and d.train=x.train and d.train=s.train";
+   	    			$exp_group='d.beg_station,d.train';
+                    $exp_order='d.beg_station, cnt_delay DESC';
+
+                    /*SELECT d.beg_station,d.train,COUNT(*) as 'cnt_delay',
+              	           x.days_delay , CONCAT(TRUNCATE(((x.days_delay/e.days)*100),2),'%') as 'procent',
+             		       s.middle_delay, s.biggest_delay
+                    FROM stations d,
+                        (SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days'
+              	  	     FROM stations da
+              		     WHERE ((da.datestatus
+                     	     	 - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                     		   	 + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                      	   	     BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                      	   	     AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+              				     GROUP BY da.train, DATE_FORMAT(da.datestatus,'%Y%m%d')
+              	        ) e,
+              	        (SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days_delay'
+              	   	     FROM stations da
+              		     WHERE ((da.datestatus
+                  	   	         - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                     			 + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                      		     BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                      	   	     AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                             	 AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+              	   	     GROUP BY da.train, DATE_FORMAT(da.datestatus,'%Y%m%d')
+              	  	    ) x,
+              	        (SELECT da.train, TRUNCATE(AVG((ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60)),2) as 'middle_delay',
+                  	     TRUNCATE(MAX(ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60),2) as 'biggest_delay'
+              	   	     FROM stations da
+              	         WHERE ((da.datestatus
+                     	         - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                     		     + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                      	         BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                      	         AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                 AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+              	   	     GROUP BY da.train, DATE_FORMAT(da.datestatus,'%Y%m%d')
+              		    ) s
+              	        WHERE ((d.datestatus
+                     	    	- INTERVAL TIME_FORMAT(d.datestatus,'%H:%i') HOUR_MINUTE
+                     		    + INTERVAL TIME_FORMAT(d.direct,'%H:%i') HOUR_MINUTE)
+                      	        BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                      	        AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                      	        AND ABS(TIME_TO_SEC(d.direct)-TIME_TO_SEC(d.expect))>0
+                     		    AND d.beg_station='zue' and d.train=e.train and d.train=x.train and d.train=s.train
+                        GROUP BY d.beg_station,d.train
+                        ORDER BY d.beg_station, cnt_delay DESC*/
+                }
+
+
+
+        	}else if(trim($station)=='mpdelay') {
+        		$exp_fields='beg_station,name_beg_station, FLOOR((100/count(*))) as procent, sum(ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))/60) as sum_delay'; //!!!
+				$exp_group='beg_station';
+	            $exp_order='procent,train';
+        	}else{
+
+           		$exp_fields='train, direct, expect';
+           		$exp_group='train';
+        		$exp_order='train,datestatus';
+
+                if (trim($least)=='info') {
+                    // Info in station
+                    $this->templates='The station of <%station%> had in the last <b style="color:blue">'.$value_period.' '.$elper.'(s)</b> <%procent%>% of the trains delayed, with an average delay of <%middle_delay%> minutes per delayed train';
+
+            		$exp_fields="s.beg_station,s.name_beg_station as 'station', TRUNCATE((d.cnt_delay/COUNT(DISTINCT s.train))*100,2) as 'procent',
+                            	   TRUNCATE(sum(ABS(TIME_TO_SEC(s.direct)-TIME_TO_SEC(s.expect))/60)/COUNT(DISTINCT s.train),2) as 'middle_delay'";
+	    			$exp_group=' s.beg_station';
+                    $exp_table=" stations s,
+	                            (SELECT b.beg_station, b.train, COUNT(DISTINCT b.train) as cnt_delay
+                                 FROM stations b
+                        	  	 WHERE ((b.datestatus
+                                 		 - INTERVAL TIME_FORMAT(b.datestatus,'%H:%i') HOUR_MINUTE
+                               			 + INTERVAL TIME_FORMAT(b.direct,'%H:%i') HOUR_MINUTE)
+                                		BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                		AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                		and ABS(TIME_TO_SEC(b.direct)-TIME_TO_SEC(b.expect))>0
+                        		 GROUP BY b.beg_station) d ";
+	                $exp_order='s.beg_station, procent DESC';
+                    if (trim($exp_where)<>'') {
+                        $exp_where=str_replace('beg_station','s.beg_station',$exp_where);
+                        $exp_where=str_replace('datestatus','s.datestatus',$exp_where);
+                        $exp_where=str_replace('direct','s.direct',$exp_where);
+                        $exp_where.=' and s.beg_station=d.beg_station';
+                    }
+                    /*  SELECT s.beg_station, s.name_beg_station, CONCAT(TRUNCATE((d.cnt_delay/COUNT(DISTINCT s.train))*100,2),"%") as procent,
+                        	   CONCAT(TRUNCATE(sum(ABS(TIME_TO_SEC(s.direct)-TIME_TO_SEC(s.expect))/60)/COUNT(DISTINCT s.train),2),"min") as middle_delay
+                        FROM stations s,
+                        	(SELECT b.beg_station, b.train, COUNT(DISTINCT b.train) as cnt_delay
+                                 FROM stations b
+                        	  	 WHERE ((b.datestatus
+                                 		 - INTERVAL TIME_FORMAT(b.datestatus,'%H:%i') HOUR_MINUTE
+                               			 + INTERVAL TIME_FORMAT(b.direct,'%H:%i') HOUR_MINUTE)
+                                		BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                		AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                		and ABS(TIME_TO_SEC(b.direct)-TIME_TO_SEC(b.expect))>0
+                        		 GROUP BY b.beg_station) d
+                        WHERE s.beg_station=d.beg_station and s.beg_station='zue'
+                        	  and ((datestatus - INTERVAL TIME_FORMAT(datestatus,'%H:%i') HOUR_MINUTE
+                               				 + INTERVAL TIME_FORMAT(direct,'%H:%i') HOUR_MINUTE)
+                                  BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                  AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                        GROUP BY s.beg_station
+                        ORDER BY procent DESC */
+                } else if(trim($least)=='mostdelay'){
+                    /*Which trains are the most delayed trains in switzerland, and in what station.
+                    "Train 123 had the last 3 months a delay on 30 days (33%), with an average delay of 7 minutes, and the largest delay 55 minutes. The train is often most delayed in the station Zurich.*/
+                    $this->templates='Train <%train%> had in the last <b style="color:blue">'.$value_period.' '.$elper.'(s)</b> a delay on <%days_delay%> days (<%procent%>%),'.
+                                     ' with an average delay of <%avgest_delay%> minutes, and the largest delay <%largest_delay%> minutes.'
+                                     .' The train is often most delayed in the station <%name_beg_station%>.';
+               		$exp_fields="c.name_beg_station, c.beg_station, c.train, MAX(c.cnt_delay) as 'cnt_delay', x.days_delay,
+                                 TRUNCATE(((x.days_delay/e.days)*100),2) as 'procent', s.avgest_delay, s.largest_delay";
+
+                    $exp_table="( SELECT d.name_beg_station, d.beg_station,d.train,COUNT(*) as 'cnt_delay'
+                                  FROM stations d
+                            	  WHERE ((d.datestatus
+                                   		   - INTERVAL TIME_FORMAT(d.datestatus,'%H:%i') HOUR_MINUTE
+                                   		   + INTERVAL TIME_FORMAT(d.direct,'%H:%i') HOUR_MINUTE)
+                                    	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                    	  AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                    	  AND ABS(TIME_TO_SEC(d.direct)-TIME_TO_SEC(d.expect))>0
+                                  GROUP BY d.beg_station,d.train
+                                   ORDER BY d.beg_station, cnt_delay DESC
+                                ) c,
+                                ( SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days'
+                            	  FROM stations da
+                            	  WHERE ((da.datestatus
+                                  	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                                   		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                                    	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                    	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                            	  GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                            	) e,
+                                ( SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days_delay'
+                            	  FROM stations da
+                            	  WHERE ((da.datestatus
+                                   	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                                   		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                                    	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                    	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                           AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                            	  GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                            	) x,
+                                ( SELECT da.train, TRUNCATE(AVG((ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60)),2) as 'avgest_delay',
+                                  TRUNCATE(MAX(ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60),2) as 'largest_delay'
+                            	  FROM stations da
+                            	  WHERE ((da.datestatus
+                                   	       - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                                   		   + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                                    	   BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                                    	   AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                           AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                            	  GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                    	        ) s ";
+
+                    $exp_where="c.beg_station='".$station."' and c.train=e.train and c.train=x.train and c.train=s.train";
+   	    			$exp_group='c.train';
+                    $exp_order='c.train';
+                }else if (trim($least)=='moststationdelay') {
+                    /*3) Per station, a list of 10 trains that are most delayed.
+                     "In Zurich, over the last month,
+                     train 123 had a delay on 15 days (50%), with an average delay of 5 minutes, and the biggest delay of 58 minutes.*/
+                    $this->title='In <b style="color:red">'.strtoupper($this->get_name_station($station)).'</b>, over the last <b style="color:blue">'.$value_period.' '.$elper.'(s)</b>,';
+                    $this->templates='train <%train%> had a delay on <%days_delay%> days (<%procent%>%),'.
+                                     ' with an average delay of <%avgest_delay%> minutes, and the biggest delay of <%biggest_delay%> minutes.';
+               		$exp_fields="d.beg_station,d.train,COUNT(*) as 'cnt_delay',
+                      	         x.days_delay , TRUNCATE(((x.days_delay/e.days)*100),2) as 'procent',
+             		             s.avgest_delay, s.biggest_delay";
+
+                    $exp_table="stations d,
+                                (SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days'
+                      	  	     FROM stations da
+                      		     WHERE ((da.datestatus
+                             	     	 - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                             		   	 + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                              	   	     BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                              	   	     AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                      			 GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                      	        ) e,
+                      	        (SELECT da.train, DATE_FORMAT(da.datestatus,'%Y%m%d') as 'day', COUNT(DISTINCT DATE_FORMAT(da.datestatus,'%Y%m%d')) as 'days_delay'
+                      	   	     FROM stations da
+                      		     WHERE ((da.datestatus
+                          	   	         - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                             			 + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                              		     BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                              	   	     AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                     	 AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                      	   	     GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                      	  	    ) x,
+                      	        (SELECT da.train, TRUNCATE(AVG((ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60)),2) as 'avgest_delay',
+                          	     TRUNCATE(MAX(ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))/60),2) as 'biggest_delay'
+                      	   	     FROM stations da
+                      	         WHERE ((da.datestatus
+                             	         - INTERVAL TIME_FORMAT(da.datestatus,'%H:%i') HOUR_MINUTE
+                             		     + INTERVAL TIME_FORMAT(da.direct,'%H:%i') HOUR_MINUTE)
+                              	         BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                              	         AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                                         AND ABS(TIME_TO_SEC(da.direct)-TIME_TO_SEC(da.expect))>0
+                      	   	     GROUP BY da.train/*, DATE_FORMAT(da.datestatus,'%Y%m%d')*/
+                      		    ) s";
+
+                    $exp_where="((d.datestatus
+                         	       - INTERVAL TIME_FORMAT(d.datestatus,'%H:%i') HOUR_MINUTE
+                         		   + INTERVAL TIME_FORMAT(d.direct,'%H:%i') HOUR_MINUTE)
+                          	       BETWEEN DATE_SUB(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR), INTERVAL 3 MONTH)
+                          	       AND DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d %H:%i:%s'), INTERVAL 7 HOUR) )
+                          	       AND ABS(TIME_TO_SEC(d.direct)-TIME_TO_SEC(d.expect))>0
+                         		   AND d.beg_station='".$station."' and d.train=e.train and d.train=x.train and d.train=s.train";
+   	    			$exp_group='d.beg_station,d.train';
+                    $exp_order='d.beg_station, cnt_delay DESC';
+                }
+
+        		//!!!
+        		if (isset($_GET['each'])) {
+                    if (trim($least)=='info'){
+                        $exp_group = '';
+             		}else{
+                        $exp_group = '';
+                        $exp_fields .= ', datestatus';
+                    }
+        		}
+
+
+        	}
+
+        } else if ($train<>'') {
+
+        	if (trim($train)=='all') {
+        		$exp_fields='train, beg_station, name_beg_station, direct, expect';
+        		$exp_group='train';
+        		$exp_order='train, beg_station';
+
+                 //  List rains of mostdelay
+                 /* Which trains are the most delayed trains in switzerland, and in what station.
+                 * Train 123 had the last 3 months a delay on 30 days (33%), with an average delay of 7 minutes, and the largest delay 55 minutes. The train is often most delayed in the station Zurich.
+                 *
+                 */
+                if (trim($least)=='mostdelay') {
+
+                    $exp_fields='train, max(ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))/60) as maxdelay'; //!!!
+            		$exp_group='train, beg_station';
+            		$exp_order='train, beg_station';
+
+                    // Info in station
+                    $this->templates='Train <%train%> had the last <b style="color:blue">'.$value_period.' '.$elper.'(s)</b> a delay on 30 days (<%procent%>), with an average delay of <%average_delay%> minutes, and the largest delay <%largest_delay%> minutes. The train is often most delayed in the station <%station%>.';
+
+                    $cnt_procent="(SELECT FLOOR((count(DATE_FORMAT(a.datestatus),'%Y-%m-%d')/90)*100) as procent FROM ".$this->curr_table.' p WHERE ABS(TIME_TO_SEC(p.direct)-TIME_TO_SEC(p.expect))>0 and p.train=train and p.type=1 and p.beg_station=beg_station'
+                         .$this->strsql_where_per_dt("(l.datestatus - INTERVAL TIME_FORMAT(l.datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(l.direct,'%H:%i') HOUR_MINUTE)",$period,"",$not, $value_period)." "
+                         .')';
+
+                    $cnt_largest='(SELECT max(ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))/60) as cnt FROM '.$this->curr_table.' l WHERE ABS(TIME_TO_SEC(l.direct)-TIME_TO_SEC(l.expect)) >0 and l.train=train and l.type=1 and l.beg_station=beg_station'
+                         .$this->strsql_where_per_dt("(l.datestatus - INTERVAL TIME_FORMAT(l.datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(l.direct,'%H:%i') HOUR_MINUTE)",$period,"",$not, $value_period)." "
+                         .')';
+
+                    $cnt_average='(SELECT avg(ABS(TIME_TO_SEC(a.direct)-TIME_TO_SEC(a.expect))/60) as cnt FROM '.$this->curr_table.' a WHERE ABS(TIME_TO_SEC(a.direct)-TIME_TO_SEC(a.expect)) >0 and a.train=train and a.type=1 and a.beg_station=beg_station'
+                         .$this->strsql_where_per_dt("(a.datestatus - INTERVAL TIME_FORMAT(a.datestatus,'%H:%i') HOUR_MINUTE + INTERVAL TIME_FORMAT(a.direct,'%H:%i') HOUR_MINUTE)",$period,"",$not, $value_period)." "
+                         .')';
+
+            		$exp_fields="beg_station,name_beg_station, ".$cnt_procent." as procent , ".$cnt_average." 'as average_delay', ".$cnt_largest." 'as largest_delay'"; //!!!
+	    			$exp_group='train,beg_station';
+	                $exp_order='train,beg_station';
+                }
+
+
+        	}else{
+        		$exp_fields='train, max(ABS(TIME_TO_SEC(direct)-TIME_TO_SEC(expect))/60) as maxdelay'; //!!!
+
+        		//!!!
+        		if (isset($_GET['eachday'])) {
+                    $exp_group='SUBSTRING(datestatus, 1,10)';
+                    $exp_fields.=', SUBSTRING(datestatus, 1,10) AS date';
+                }
+        	}
+        	        	
+        	//$exp_fields='beg_station,name_beg_station, FLOOR((100/count(*))) as procent, sum(ABS(direct-expect)) as sum_delay';    
+        	//$exp_group='beg_station';	
+        	//$exp_order='procent, train';    
+        } else {
+        	$exp_fields='train, beg_station, name_beg_station, direct, expect';
+        	$exp_group='train';
+        	$exp_order='train, beg_station';
+        	
+        }
+        
+        if ($limit<>0) {
+        	$exp_limit=$limit;
+        }
+
+        if (isset($_GET['next'])) {
+            $exp_fields='train, direct, expect, datestatus';
+        	$exp_group='';
+            //$exp_fields='train, direct, expect, max(datestatus)';
+        	//$exp_group='train';
+        	$exp_order='datestatus,train DESC';
+        }
+        if (trim($exp_table)==="") {
+            $exp_table=$this->curr_table;
+        }
+        $sql=$this->create_str_sql($exp_fields,$exp_table,$exp_where,'',$exp_group,$exp_order, $exp_limit);
+        return $sql;
+    }
+
+    /** Create string sql
+     *  @param string $exp       - list fields query
+     *  @param string $exp_table - name table query
+     *  @param string $exp_where - where query
+     *  @param string $exp_join  - join query
+     *  @param string $exp_group - group query
+     *  @param string $exp_order - order query
+     *  @param string $exp_limit - order limit
+     *  return string 
+     */
+    function create_str_sql( $exp_fields='', $exp_table='', $exp_where='', $exp_join='',
+    						 $exp_group='', $exp_order='', $exp_limit='') {
+    	$str_sql="SELECT DISTINCT ".$exp_fields."
+	          FROM ".$exp_table." ";
+    	if (trim($exp_join)<>'') {
+	  		$str_sql.=" ".$exp_join." "; 
+    	}
+	  	if (trim($exp_where)<>'') {
+	  		$str_sql.=" WHERE ".$exp_where." "; 
+	  	}
+	    if (trim($exp_group)<>'') {      
+	        $str_sql.=" GROUP BY ".$exp_group." ";
+	    }
+	    if (trim($exp_order)<>'') {
+	        $str_sql.=" ORDER BY ".$exp_order." ";
+	    }
+	    if (trim($exp_limit)<>'') {
+	  	    $str_sql.=" LIMIT ".$exp_limit." OFFSET 0;";
+	  	}
+        //echo $str_sql;
+    	return $str_sql;
+    	
+    }
+    
+    /* Show select records for parameters
+     * @param array $arr_parms - array parameters for sql query
+     */    
+    function show_sel_records($arr_parms) {
+    	
+    	$sql=$this->sql_sel_records($arr_parms);
+    	//echo '<pre>sql_sel_records='.$sql.'</pre>';
+    	$format=$arr_parms["format"];
+    	switch ($format) {
+    		case 'html':
+    			$res=mysql_query($sql) or die(mysql_error().'<br>'.sql.'<br>');
+    			break;
+    		case 'xml':
+    			break;
+    		case 'json':
+    			break;
+    		case 'rss':
+    			break;
+            case 'info':
+                $this->show_info($sql);
+                break;
+    		default:
+    			$this->show_xmlsql($sql);
+    	}
+    	
+    }
+
+    /* Run create db
+     * @param int $stop_oper default 0 - Stopping operation
+     * @param boolean $is_drop default false - Clear db
+     */
+    function run_createdb($stop_oper=0,$is_drop=false) {
+    	$timer=new timer();
+    	if ($stop_oper==1) {
+    	   	return;
+    	}
+    	// Time clear tables
+    	$timer->b();
+    	$this->clear_table(); //0.20194602012634 seconds
+    	$timer->e();
+		//echo ('<p><center>Time clear tables, c: '.$timer->time_rez().'</center></p>');
+		echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time clear tables, c: '.$timer->time_rez().'</center></div></div>');
+    }
+    
+    /* Run operation
+     * @param int $stop_oper default 0 - Stopping operation
+     */
+    function run_op_new($stop_oper=0) {
+    	    
+    	    $timer=new timer();
+    	    if ($stop_oper==1) {
+    	    	return;
+    	    }
+    	    // Time clear tables
+    		$timer->b();
+    		$this->clear_table(); //0.20194602012634 seconds
+    		$timer->e();
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time clear tables, c: '.$timer->time_rez().'</center></div></div>');
+			
+    		if ($stop_oper==2) {
+    	    	return;
+    	    }
+			// Time parse abbets
+			$timer->b();
+    		$this->parse_abbets(); //0.19398498535156 seconds
+    		$timer->e();
+    		echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time parse abbets, c: '.$timer->time_rez().'</center></div></div>');
+			//echo ('<p><center>Time parse abbets, c: '.$timer->time_rez().'</center></p>');
+			
+    		if ($stop_oper==3) {
+    	    	return;
+    	    }
+			// Time parse stations
+			$timer->b();
+			$this->parse_pbps(); //287.09705209732 seconds 
+			$timer->e();
+			//echo ('<p><center>Time parse stations, c: '.$timer->time_rez().'</center></p>');
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time parse stations, c: '.$timer->time_rez().'</center></div></div>');
+			
+    		if ($stop_oper==4) {
+    	    	return;
+    	    }
+			// Time save info station
+			$timer->b();
+			$this->save_info(); //19.288781166077 seconds
+			$timer->e();
+			//echo ('<p><center>Time save information of stations, c: '.$timer->time_rez().'</center></p>');
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time save information of stations, c: '.$timer->time_rez().'</center></div></div>');
+    }
+    
+    /* Run clear old records in db
+     * 
+     */
+    function  run_clear_oldrec() {
+    	    
+    	    $timer=new timer();
+
+    		// Time save info station
+			$timer->b();
+    		$this->clear_oldurl();
+			//$this->clear_oldurl('infostations');
+			$this->clear_oldurl('infotrains');
+			$this->clear_oldurl('trains');
+			$this->clear_oldurl('stations');
+			$timer->e();
+			//echo ('<p><center>Time clear old info of data, c: '.$timer->time_rez().'</center></p>');
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time clear old info of data, c: '.$timer->time_rez().'</center></div></div>');
+    }
+    
+    
+    /* Show information  
+     * 
+     */
+    function show() {
+    	
+    	ini_set('memory_limit', '512M');         // SET Limit memory of the load page in Mb 
+    	ini_set('max_execution_time', '3600');   // SET Max time of the load page in seconds
+    	//ini_set('max_input_time', '3600'); 	 // SET Max time of the load file in seconds
+    	if (trim($_GET["delay"])=='info'||trim($_GET["delay"])=='mostdelay'||trim($_GET["delay"])=='moststationdelay') {
+            $format='info';
+    	} else {
+    	    $format=trim($_GET['format']); // Format 'XML, 'HTML', 'RSS', 'JSON'
+        }
+    	$op=trim($_GET['op']);
+    	$sql=trim($_GET['sql']);
+    	$drop=(trim($_GET['drop'])==='false' ? false : true);
+    	$station=trim($_GET['station']);
+    	$trainno=trim($_GET['trainno']);
+    	$lastweek=trim($_GET['lastweek']);
+    	$lastmonth=trim($_GET['lastmonth']);
+    	$delay=trim($_GET['delay']);
+    	$limit=trim($_GET['max']); // Limit
+    	$next=trim($_GET['next']); // Preiod > current time create page station
+
+    	$period='';
+    	$per_cnt='';
+
+
+    	if ($lastmonth<>''){
+    		$period='lastmonth';
+    		$per_cnt=$lastmonth; // in mounth
+    	}
+
+    	if ($lastweek<>'') {
+    		$period='lastweek';
+    		$per_cnt=$lastweek; // in week
+    	}
+
+    	if ($next<>'') {
+    		$period='minute';
+    		$per_cnt='-'.$next;
+    		$not=false;
+    	}
+
+        $arr_parms=$this->set_parms_sql($format, $station, $trainno, $limit, $delay, $period, $per_cnt, $not );
+
+        $timer=new timer();
+
+    	if ($op=='fullnew') {
+
+    		$this->run_op_new(); // Time 300sec.(5min)
+
+    	} else if ($op=='createdbs') {
+           if ($drop) {
+        		$this->run_createdb();
+           }else{
+        		$this->run_createdb();
+           }
+    		 
+			
+    	} else if ($op=='new') {
+    		
+    		$this->run_op_new(4); // Time 300sec.(5min) 
+			
+    	} else if ($op=='clearold') {
+    		
+    		$this->run_clear_oldrec();
+    
+    	} else if ($op=='parse') {
+    		
+			// Time parse abbets
+			$timer->b();
+    		$this->parse_abbets();
+    		$timer->e();
+			//echo ('<p><center>Time parse abbets, c: '.$timer->time_rez().'</center></p>');
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time parse abbets, c: '.$timer->time_rez().'</center></div></div>');
+			
+			// Time parse stations
+			$timer->b();
+			$this->parse_pbps();
+			$timer->e();
+			//echo ('<p><center>Time parse stations, c: '.$timer->time_rez().'</center></p>');
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time parse stations, c: '.$timer->time_rez().'</center></div></div>');
+				
+    	} else if ($op=='save') {
+    		
+			// Time parse abbets
+			$timer->b();
+    		$this->parse_abbets();
+    		$timer->e();
+			//echo ('<p><center>Time parse abbets, c: '.$timer->time_rez().'</center></p>');
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time parse abbets, c: '.$timer->time_rez().'</center></div></div>');
+			
+			// Time parse stations
+			$timer->b();
+			$this->parse_pbps();
+			$timer->e();
+			//echo ('<p><center>Time parse stations, c: '.$timer->time_rez().'</center></p>');
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time parse stations, c: '.$timer->time_rez().'</center></div></div>');
+			
+			// Time save info station
+			$timer->b();
+			$this->save_info();
+			$timer->e();
+			//echo ('<p><center>Time save information of stations, c: '.$timer->time_rez().'</center></p>');
+    		echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time save information of stations, c: '.$timer->time_rez().'</center></div></div>');
+    					
+    	} else if ($op=='save_info') {
+    		
+			// Time save info station
+			$timer->b();
+			$this->save_info(); // 19.288781166077 seconds
+			$timer->e();
+			//echo ('<p><center>Time save information of stations, c: '.$timer->time_rez().'</center></p>');
+			echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time save information of stations, c: '.$timer->time_rez().'</center></div></div>');
+				
+    	} else if ($op=='sel') {
+    		
+    		//  "Show me the 10 trainnumbers in detile which have most often a delay of at least 5 minutes over last month"
+			//  РџРѕРєР°Р·Р°С‚СЊ 10 РїРѕРµР·РґРѕРІ РєРѕС‚РѕСЂС‹Рµ РїСЂРёР±С‹РІР°СЋС‚ СЃ 5 РјРёРЅСѓС‚ Р·Р° РїРѕСЃР»РµРґРЅРёР№ РјРµСЃСЏС†.
+    		if ($sql=='s10trains_d5_lastmount') {
+    			   			
+	    		// Time save info station
+				$timer->b();
+				$this->show_sel_trains($arr_parms); // ? seconds
+				$timer->e();
+				//echo ('<p><center>Time show to you the 10 trainnumbers which have most often a delay of at least 5 minutes over last month, c: '.$timer->time_rez().'</center></p>');
+				echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time show to you the 10 trainnumbers <span style="color:red">in detile</span> which have most often a delay of at least 5 minutes over last month, c: '.$timer->time_rez().'</center></div></div>');
+    		
+			//  "Show me the 10 train stations in detile that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months"
+			//  РџРѕРєР°Р·Р°С‚СЊ 10 СЃС‚Р°РЅС†РёР№ С‡С‚Рѕ РёРјРµСЋС‚ РІС‹СЃРѕРєРёР№ РїСЂРѕС†РµРЅС‚ РѕРїРѕР·РґР°РІР°РЅРёСЏ РїСЂРёР±С‹С‚РёСЏ РЅР° СЃС‚Р°РЅС†РёСЋ >=5РјРёРЅ Р·Р° РїРѕСЃР»РµРґРЅРёРµ 3РјРµСЃСЏС†Р°.	
+    		} else if ($sql=='s10stations_d5_last3mounts') {
+    			
+    			// Time save info station
+				$timer->b();
+				$this->show_sel_stations($arr_parms); // ? seconds
+				$timer->e();
+				//echo ('<p><center>Time show to you the 10 train stations that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months, c: '.$timer->time_rez().'</center></p>');
+				echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time show to you the 10 train stations <span style="color:red">in detile</span> that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months, c: '.$timer->time_rez().'</center></div></div>');
+    			
+			//  "Show me all trains in detile with a delay of 5 minutes that will leave from Geneva in the next 15 minutes"
+			//  РџРѕРєР°Р·Р°С‚СЊ Р’СЃРµ РїРѕРµР·РґР° СЃ РѕРїРѕР·РґС‹РІР°РЅРёРµРј >=5РјРёРЅ РїСЂРёР±С‹РІР°СЋС‰РёС… РІ Р–РµРЅРµРІСѓ	
+    		} else if ($sql=='salltrains_d5_last15mins') {
+			
+    			// Time save info station
+				$timer->b();
+				$this->show_sel_all_trains($arr_parms); // ? seconds
+				$timer->e();
+				//echo ('<p><center>Time show to you all trains with a delay of 5 minutes that will leave from Geneva in the next 15 minutes, c: '.$timer->time_rez().'</center></p>');
+				echo ('<div style="padding:10px" align="left"><a style="float:left;" href="/parser/">Home</a><div align="center"><center>Time show to you all trains <span style="color:red">in detile</span> with a delay of 5 minutes that will leave from all station the next 15 minutes, c: '.$timer->time_rez().'</center></div></div>');
+    		 
+    		//  "Show me the 10 trainnumbers which have most often a delay of at least 5 minutes over last month"
+			//  РџРѕРєР°Р·Р°С‚СЊ 10 РїРѕРµР·РґРѕРІ РєРѕС‚РѕСЂС‹Рµ РїСЂРёР±С‹РІР°СЋС‚ СЃ 5 РјРёРЅСѓС‚ Р·Р° РїРѕСЃР»РµРґРЅРёР№ РјРµСЃСЏС†.
+			} else if ($sql=='s10trains_dd5_lastmount') {
+    					
+	    		// Time save info station
+				$timer->b();
+				$this->show_sel_dist_trains($arr_parms); // ? seconds
+				$timer->e();
+    		
+			//  "Show me the 10 train stations that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months"
+			//  РџРѕРєР°Р·Р°С‚СЊ 10 СЃС‚Р°РЅС†РёР№ С‡С‚Рѕ РёРјРµСЋС‚ РІС‹СЃРѕРєРёР№ РїСЂРѕС†РµРЅС‚ РѕРїРѕР·РґР°РІР°РЅРёСЏ РїСЂРёР±С‹С‚РёСЏ РЅР° СЃС‚Р°РЅС†РёСЋ >=5РјРёРЅ Р·Р° РїРѕСЃР»РµРґРЅРёРµ 3РјРµСЃСЏС†Р°.	
+    		} else if ($sql=='s10stations_dd5_last3mounts') {
+    			
+    			// Time save info station
+				$timer->b();
+				$this->show_sel_dist_stations($arr_parms); // ? seconds
+				$timer->e();
+    			
+			//  "Show me all trains with a delay of 5 minutes that will leave from Geneva in the next 15 minutes"
+			//  РџРѕРєР°Р·Р°С‚СЊ Р’СЃРµ РїРѕРµР·РґР° СЃ РѕРїРѕР·РґС‹РІР°РЅРёРµРј >=5РјРёРЅ РїСЂРёР±С‹РІР°СЋС‰РёС… РІ Р–РµРЅРµРІСѓ	
+    		} else if ($sql=='salltrains_dd5_last15mins') {
+				
+    			// Time save info station
+				$timer->b();
+				$this->show_sel_dist_all_trains($arr_parms); // ? seconds
+				$timer->e();
+    		} 
+    		
+    	} else if ($op=='debug' or trim($_SERVER["QUERY_STRING"])=='') {
+   		    //$this->run_op_new(4);
+   		    if ($op=='debug') {
+	   		    echo '<div style="padding-top:15px;color:bluer;font-size:15px;" align="center"><b>Operations in sron</b></div>';
+	   		    echo '<div style="width:100%;padding-bottom:15px;color:red;font-size:small" align="center">* Note: Operation 1 to execute only during setting of parser! Operations 2,3,4 started in cron cyclic with an interval 5 minutes or other time indicated by you! </div>';
+	   		    //echo '<div style="padding-left:200px;">1.&nbsp;<a href="/parser/index.php?op=new"></a></div>';
+	   		    echo '<div style="padding-left:160px;">1.&nbsp;<a href="/parser/index.php?op=createdbs" style="color:red">Create data parse (recreate data)</a></div>';
+	   		    echo '<div style="padding-left:160px;">2.&nbsp;<a href="/parser/index.php?op=parse">Parsing abbet info wih to record the data</a></div>';
+	   		    echo '<div style="padding-left:160px;">3.&nbsp;<a href="/parser/index.php?op=save_info">Save informing stations the data</a></div>';
+	   		    echo '<div style="padding-left:160px;">4.&nbsp;<a href="/parser/index.php?op=clearold">Clean old info of data</a></div>';
+	   		    echo '<br/>';
+	   		}
+   		    echo '<div style="padding:15px;color:green" align="center">Shows to you</div>';
+   		    
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?station=ZRH&lastweek=1&delay=5&max=20"><span style="font-color:brown">Show to you max. 20 trains with a delay of at least 5 minutes over the last week in Zurich</span></a></div>';
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?lastmonth=3&delay=10&max=20"><span style="font-color:brown">Show to you max. 20 trains with a delay of 10 minutes over the last 3 months in the whole of Switzerland</span></a></div>';
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?station=GVA&delay=5&next=15"><span style="font-color:brown">Show to you me all trains with a delay of 5 minutes for the next 15 minutes arriving at Geneva</span></a></div>';
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?trainno=5250&lastmonth=3"><span style="font-color:brown">Shows to you per day for this trainnumber, the maximum delay during the ride of the train</span></a></div>';
+	   		    echo '</br>';
+
+	   		if ($op=='debug') {
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?op=sel&sql=s10trains_dd5_lastmount">Show to you the 10 trainnumbers which have most often a delay of at least 5 minutes over last month</a></div>';
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?op=sel&sql=s10stations_dd5_last3mounts">Show to you the 10 train stations that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months</a></div>';
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?op=sel&sql=salltrains_dd5_last15mins&station=GE">Show to you all trains with a delay of 5 minutes that will leave from Geneva in the next 15 minutes</a></div>';
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?op=sel&sql=s10trains_d5_lastmount">Show to you the 10 trainnumbers <span style="color:red">in detile</span> which have most often a delay of at least 5 minutes over last month</a></div>';
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?op=sel&sql=s10stations_d5_last3mounts">Show to you the 10 train stations <span style="color:red">in detile</span> in detile</span> that has hte highest percentage of trains that arrive at the station wit a delay of at least 5 minutes over the last 3 months</a></div>';
+	   		    echo '<div style="padding-left:160px;"><a href="/parser/index.php?op=sel&sql=salltrains_d5_last15mins">Show to you all trains with a delay <span style="color:red">in detile</span> of 5 minutes that will leave from Geneva in the next 15 minutes</a></div>';
+	   		}
+    	} else {
+    		// Show select records about stations
+			$this->show_sel_records($arr_parms); // ? seconds
+	
+    	}
+    }
+    
+    /* Test parse */
+    function test_parse() {        
+    	// $config['hostname']='';
+    	// $config['username']='';
+    	// $config['password']='';
+    	// $config['database']='';
+    	//mysql_connect($config['hostname'],$config['username'],$config['password']) or die(mysql_error());
+        //mysql_select_db($config['database']);
+        // Set code in database
+        //mysql_query("SET NAMES utf8");
+        //mysql_query("set character_set_client='utf8'");
+	//mysql_query("set character_set_connection='utf8'");
+	//mysql_query("set character_set_results='utf8'");
+	$matches=array();
+    	$body=file_get_contents('http://prosurf.sbb.ch/pros/inter/prosurfservlet?TRANSACTION=093&ENTRYPAGE=A',false);
+		preg_match_all('/\<a[\s]*href\=\"javascript\:getPBP\(\'([A-Z]+)\'\)\" target\=\"_top\"\>([^<]+)\<\/a\>/i',$body, $matches, PREG_SET_ORDER);
+		$snt=count($matches);
+		//print_r($matches);
+		if ($snt>0) {
+		   	for ($s = 0; $s < $snt; $s++)
+		   	{ 
+		   		$trans_tbl = get_html_translation_table (HTML_ENTITIES);
+		   		echo "<pre>Р”Рѕ ".$matches[$s][2]." РїРѕСЃР»Рµ".$this->umlaute($matches[$s][2])." </pre>";
+				$sql=" INSERT INTO infostations SET "
+    			."id='$s',"
+    			."name_station='".$matches[$s][2]."'";
+    			/* $sql=" INSERT INTO infostations SET "
+    			   ."id='$s',"
+    			   ."name_station='AltstГ¤tten SG'";
+    			 */
+				mysql_query($sql);
+				
+		   	}
+		}
+    }
+    
+    /* Uml Translate
+     * 
+     */
+    function umlaute($text){
+		return strtr($text,array(
+	    	"&#8221;" => "”",
+	    	"&#8220;" => "“",
+	    	"&#339;"  => "?",
+	    	"&#8482;" => "™",
+	    	"&#8217;" => "’",
+	    	"&#8216;" => "‘",
+	    	"&#8240;" => "‰",
+	    	"&#8230;" => "…",
+	    	"&euro;"  => "€",
+	        "&iexcl;" => "?",
+	    	"&cent;"  => "?",
+	    	"&pound;" => "?",
+	    	"&curren;"=> "¤",
+	    	"&yen;"   => "?",
+	    	"&brvbar;"=> "¦",
+	    	"&sect;"  => "§",
+	    	"&uml;"   => "?",
+	    	"&copy;"  => "©",
+	    	"&ordf;"  => "?",
+	    	"&laquo;" => "«",
+	    	"&not;"   => "¬",
+	    	"&shy;"   => "­",
+	    	"&reg;"   => "®",
+	    	"&macr;"  => "?",
+	    	"&deg;"   => "°",
+	    	"&plusmn;"=> "±",
+	    	"&sup2;" => "?",
+	    	"&sup3;" => "?",
+	    	"&acute;" => "?",
+	    	"&micro;" => "µ",
+	    	"&para;" => "¶",
+	    	"&middot;" => "·",
+	    	"&cedil;" => "?",
+	    	"&sup1;" => "?",
+	    	"&ordm;" => "?",
+	    	"&raquo;" => "»",
+	    	"&frac14;" => "?",
+	    	"&frac12;" => "?",
+	    	"&frac34;" => "?",
+	    	"&iquest;" => "?",
+	    	"&Agrave;" => "?",
+	    	"&Aacute;" => "?",
+	    	"&Acirc;" => "?",
+	    	"&Atilde;" => "?",
+	    	"&Auml;" => "?",
+	    	"&Aring;" => "?",
+	    	"&AElig;" => "?",
+	    	"&Ccedil;" => "?",
+	    	"&Egrave;" => "?",
+	    	"&Eacute;" => "?",
+	    	"&Ecirc;" => "?",
+	    	"&Euml;" => "?",
+	    	"&Igrave;" => "?",
+	    	"&Iacute;" => "?",
+	    	"&Icirc;" => "?",
+	    	"&Iuml;" => "?",
+	    	"&ETH;" => "?",
+	    	"&Ntilde;" => "?",
+	    	"&Ograve;" => "?",
+	    	"&Oacute;" => "?",
+	    	"&Ocirc;" => "?",
+	    	"&Otilde;" => "?",
+	    	"&Ouml;" => "?",
+	    	"&times;" => "?",
+	    	"&Oslash;" => "?",
+	    	"&Ugrave;" => "?",
+	    	"&Uacute;" => "?",
+	    	"&Ucirc;" => "?",
+	    	"&Uuml;" => "?",
+	    	"&Yacute;" => "?",
+	    	"&THORN;" => "?",
+	    	"&szlig;" => "?",
+	    	"&agrave;" => "?",
+	    	"&aacute;" => "?",
+	    	"&acirc;" => "?",
+	    	"&atilde;" => "?",
+	    	"&auml;" => "?",
+	    	"&aring;" => "?",
+	    	"&aelig;" => "?",
+	    	"&ccedil;" => "?",
+	    	"&egrave;" => "?",
+	    	"&eacute;" => "?",
+	    	"&ecirc;" => "?",
+	    	"&euml;" => "&euml;",
+	    	"&igrave;" => "?",
+	    	"&iacute;" => "?",
+	    	"&icirc;" => "?",
+	    	"&iuml;" => "?",
+	    	"&eth;" => "?",
+	    	"&ntilde;" => "?",
+	    	"&ograve;" => "?",
+	    	"&oacute;" => "?",
+	    	"&ocirc;" => "?",
+	    	"&otilde;" => "?",
+	    	"&ouml;" => "?",
+	    	"&divide;" => "?",
+	    	"&oslash;" => "?",
+	    	"&ugrave;" => "?",
+	    	"&uacute;" => "?",
+	    	"&ucirc;" => "?",
+	    	"&uuml;" => "?",
+	    	"&yacute;" => "?",
+	    	"&thorn;" => "?",
+	    	"&yuml;" => "?", 
+		"&szlig;"=>"?",
+		"&auml;"=>"?",
+	     /* "&euml;"=>"?",
+		"&iuml;"=>"?",
+		"&uuml;"=>"?",
+		"&ouml;"=>"?",
+		"&Auml;"=>"?",
+		"&Euml;"=>"?",
+		"&Iuml;"=>"?",
+		"&Uuml;"=>"?",
+		"&Ouml;"=>"?",
+		"&acirc;"=>"?",
+		"&ecirc;"=>"?",
+		"&icirc;"=>"?",
+		"&ocirc;"=>"?",
+		"&ucirc;"=>"?",
+		"&Acirc;"=>"?",
+		"&Ecirc;"=>"?",
+		"&Icirc;"=>"?",
+		"&Ocirc;"=>"?",
+		"&Ucirc;"=>"?",
+		"&agrave;"=>"?",
+		"&egrave;"=>"?",
+		"&ugrave;"=>"?",
+		"&eacute;"=>"?",
+		"&Agrave;"=>"?",
+		"&Egrave;"=>"?",
+		"&Ugrave;"=>"?",
+		"&Eacute;"=>"?",
+		"&ccedil;"=>"?",*/
+		"%3A"=>"/"
+	));
+}
+    
+}
+
+$parstest= new parser();
+//$parstest->test_parse();
+$parstest->show();
+//$sql="INSERT INTO infostations SET id='a786253f67ce909fc33640cb97a47f10',trans='004',lang='e',station='DAET',name_station='DaГ¤ttwil'";
+//mysql_query($sql);
+?>
