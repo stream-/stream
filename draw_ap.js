@@ -4,7 +4,7 @@ var draw = {
     videoScaleY: 1,
     sensorScaleX: 1,
     sensorScaleY: 1,
-    canvas: null,
+    canvas: null, 
     area: null,
     disable: true,
     isStatusbarMessage: false,
