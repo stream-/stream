@@ -1,5 +1,5 @@
 <?php
-class CVValues
+class CVValues 
 {
     const LOCK_TILT_PAN_HEIGHT_STATE = '/data/Raptor/lock_tilt_pan_height_state';
     const SCHEDULER_CONFIG = '/data/Raptor/rv_scheduler.xml'; //only for auto fw update
