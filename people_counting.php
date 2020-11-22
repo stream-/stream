@@ -5,7 +5,7 @@ class PCValues
     {
         $this->values = array();
         $this->isRemoveNull = $isRemoveNull;
-        $this->isLicensed = acquire_license("PC");
+        $this->isLicensed = acquire_license("PC"); 
     }
 
     public function build($config)
