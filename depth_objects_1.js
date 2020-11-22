@@ -3,7 +3,7 @@ var depthObjects = {
     poolKeyBoundingBox: null,
     errorCounter: [],
     callFunction: null,
-    startShow: function() {
+    startShow: function() { 
         if (VideoSettings.Resolution.width == undefined) {
             alert('Firstly VideoSettings.Resolution.width should be initialized');
             return;
